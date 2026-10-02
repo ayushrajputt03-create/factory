@@ -1252,6 +1252,46 @@ td { color: #334155; padding: 0.72rem 0.9rem; }
   .view-body { padding: 1.4rem 1.25rem; }
 }
 
+/* Clean school-ERP inspired density pass */
+body { background: #f4f7fb; }
+.workspace { background: #f4f7fb; }
+.sidebar { width: 248px; }
+.sidebar nav { gap: 0.05rem; padding-top: 0.5rem; }
+.nav-group-label { padding-top: 0.65rem; padding-bottom: 0.2rem; }
+.nav-item { min-height: 36px; font-size: 0.74rem; }
+.topbar { height: 70px; padding: 0 1.5rem; }
+.view-body { max-width: 1320px; padding: 1.5rem; gap: 1rem; }
+.metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem; }
+.metric-card { min-height: 94px; padding: 0.9rem 1rem; box-shadow: 0 1px 3px rgb(2 16 36 / 0.05); }
+.metric-card:hover { transform: none; box-shadow: 0 1px 3px rgb(2 16 36 / 0.07); }
+.metric-card::after { display: none; }
+.metric-icon-box { width: 36px; height: 36px; border-radius: 8px; }
+.metric-value { font-size: 1.25rem; }
+.panel { padding: 1rem; box-shadow: 0 1px 3px rgb(2 16 36 / 0.05); }
+.panel:hover { box-shadow: 0 1px 3px rgb(2 16 36 / 0.07); }
+.panel-header { margin-bottom: 0.85rem; }
+.grid-2, .grid-3 { gap: 1rem; }
+.quick-action-strip { gap: 0.6rem; }
+.quick-action-btn { min-width: 145px; padding: 0.6rem 0.8rem; font-size: 0.76rem; }
+.machine-board { gap: 0.7rem; }
+.machine-card { padding: 0.85rem; }
+.table-container { box-shadow: none; }
+th { padding: 0.65rem 0.8rem; }
+td { padding: 0.7rem 0.8rem; }
+.btn-primary, .btn-outline { min-height: 36px; }
+
+@media (max-width: 1100px) {
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .sidebar { width: 100%; }
+  .topbar { padding: 0.7rem 1rem; }
+  .view-body { padding: 1rem; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-card { min-height: 86px; }
+}
+
 @media (max-width: 900px) {
   .page-title { max-width: 300px; }
   .page-title h1 { font-size: 0.94rem; }
