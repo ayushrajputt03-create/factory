@@ -1,5 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 :root {
-  font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -1008,4 +1010,121 @@ tr.row-breakdown td {
 
 @media (max-width: 1100px) {
   .sidebar { width: 226px; }
+}
+
+/* Reference-inspired school ERP visual language */
+:root {
+  --sidebar-bg: #111827;
+  --sidebar-active-bg: #263a5b;
+  --sidebar-text: #f8fafc;
+  --sidebar-muted: #9aa9c0;
+  --sidebar-indicator: #6d8cff;
+  --bg-app: #f3f6fa;
+  --card-bg: #ffffff;
+  --card-border: #dfe6ef;
+  --text-main: #1f2a3d;
+  --text-muted: #718096;
+  --status-blue: #2f5bd3;
+  --status-blue-bg: #e9efff;
+  --status-blue-border: #c9d7ff;
+}
+
+body {
+  background: #f3f6fa;
+  color: #1f2a3d;
+}
+
+.sidebar {
+  width: 248px;
+  background: #111827;
+  border-right: 1px solid #202b3d;
+  box-shadow: none;
+}
+
+.plant-brand {
+  padding: 1.1rem 1rem;
+  gap: 0.8rem;
+  border-bottom: 1px solid #202b3d;
+}
+
+.brand-icon {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.brand-title h2 { font-size: 1rem; letter-spacing: -0.02em; }
+.brand-title span { color: #8190a8; font-size: 0.62rem; }
+
+.nav-group-label {
+  color: #71809a;
+  padding: 0.85rem 1rem 0.3rem;
+  font-size: 0.62rem;
+}
+
+.nav-item {
+  margin: 0 0.55rem;
+  width: calc(100% - 1.1rem);
+  min-height: 38px;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  color: #aebbd0;
+  font-size: 0.78rem;
+}
+
+.nav-item:hover { background: #1b2940; color: #ffffff; transform: none; }
+.nav-item.active { background: #263a5b; color: #ffffff; box-shadow: inset 3px 0 #6d8cff; }
+.nav-item.active svg { color: #cad6ff; }
+
+.topbar {
+  height: 72px;
+  padding: 0 1.75rem;
+  background: #ffffff;
+  border-bottom: 1px solid #e5ebf2;
+  box-shadow: none;
+}
+
+.page-title h1 { font-size: 1.1rem; color: #1f2a3d; }
+.page-title p { color: #7b8799; font-size: 0.7rem; }
+
+.view-body {
+  max-width: 1540px;
+  padding: 2rem 1.75rem;
+  gap: 1.1rem;
+}
+
+.metric-card, .panel, .machine-card {
+  border: 1px solid #dfe6ef;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.025);
+}
+
+.metric-card { padding: 1.1rem 1rem; }
+.metric-card:hover { border-color: #c8d5e5; box-shadow: 0 8px 20px -18px rgb(15 23 42 / 0.35); transform: translateY(-1px); }
+.metric-label { color: #7b8799; font-size: 0.68rem; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.metric-value { font-size: 1.45rem; color: #1f2a3d; }
+.metric-sub { font-size: 0.7rem; }
+
+.panel { padding: 1.1rem 1rem; }
+.panel-header { margin-bottom: 1rem; }
+.panel-title h3 { color: #243148; font-size: 0.92rem; }
+.panel-title p { color: #8490a2; font-size: 0.72rem; }
+
+.btn-primary { background: #2f5bd3; border-radius: 7px; }
+.btn-primary:hover { background: #244bb5; }
+.btn-outline { background: #ffffff; border-color: #dfe6ef; border-radius: 7px; }
+.form-control { border-color: #dfe6ef; border-radius: 7px; background: #ffffff; }
+
+th { background: #f8fafc; color: #718096; font-size: 0.66rem; }
+td { color: #334155; padding: 0.72rem 0.9rem; }
+
+.user-profile-widget { background: #0e1624; border-top-color: #202b3d; }
+.avatar-circle { background: #2f5bd3; color: #ffffff; border: 0; }
+
+@media (max-width: 1100px) {
+  .sidebar { width: 220px; }
+  .view-body { padding: 1.4rem 1.25rem; }
 }
