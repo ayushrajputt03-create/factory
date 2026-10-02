@@ -832,6 +832,8 @@ export default function App() {
   );
 }
 
+type CrmLead = { id: string; company: string; city: string; source: string; product: string; value: number; stage: string; temperature: string; owner: string };
+
 function CrmFoundationView({ parties, invoices, userRole, showToast, onNavigate }: { parties: Party[]; invoices: Invoice[]; userRole: "owner" | "supervisor" | "ca"; showToast: (message: string) => void; onNavigate: (view: View) => void }) {
   const crmTabFromPath = window.location.pathname.split("/")[2] || "dashboard";
   const [tab, setTabState] = useState(crmTabFromPath === "follow-ups" ? "followups" : crmTabFromPath);
@@ -863,12 +865,21 @@ function CrmFoundationView({ parties, invoices, userRole, showToast, onNavigate 
   const [leadDraft, setLeadDraft] = useState({ company: "", city: "", product: "", value: "", source: "Referral" });
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
-  const [selectedLead, setSelectedLead] = useState<(typeof leads)[number] | null>(null);
-  const [leads, setLeads] = useState([
+  const [selectedLead, setSelectedLead] = useState<CrmLead | null>(null);
+  const [leads, setLeads] = useState<CrmLead[]>(() => {
+    try {
+      const saved = window.localStorage.getItem("factory-os-crm-leads");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
     { id: "LD-2601", company: "Marwar Plastic Agencies", city: "Kota", source: "Referral", product: "20L Storage Crate", value: 85000, stage: "Qualified", temperature: "Hot", owner: "Ayush" },
     { id: "LD-2602", company: "Khandelwal Retail Network", city: "Jaipur", source: "IndiaMART", product: "Pedal Dustbin", value: 132000, stage: "Quotation Sent", temperature: "Warm", owner: "Ayush" },
     { id: "LD-2603", company: "Shree Om Distributors", city: "Ajmer", source: "Walk-in", product: "Sorting Tray", value: 64000, stage: "Contacted", temperature: "Cold", owner: "Ravi" },
-  ]);
+    ];
+  });
+  useEffect(() => {
+    window.localStorage.setItem("factory-os-crm-leads", JSON.stringify(leads));
+  }, [leads]);
   const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["pipeline", "Pipeline"], ["customers", "Customers"], ["quotations", "Quotations"], ["followups", "Follow-ups"], ["activities", "Activities"], ["complaints", "Complaints"], ["reports", "Reports"], ["settings", "Settings"]];
   const openPipeline = leads.reduce((sum, lead) => sum + lead.value, 0);
   const won = parties.filter((party) => party.status === "active").length;
