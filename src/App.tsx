@@ -1,0 +1,3595 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  Factory,
+  Gauge,
+  Boxes,
+  Layers3,
+  ReceiptText,
+  Users,
+  Truck,
+  BarChart3,
+  Bell,
+  Plus,
+  Search,
+  CheckCircle,
+  AlertTriangle,
+  MessageCircle,
+  Clock,
+  Download,
+  ShieldCheck,
+  TrendingUp,
+  History,
+  Send,
+  Sparkles,
+  ChevronRight,
+  PackagePlus,
+  RefreshCw,
+  IndianRupee,
+  Cpu,
+  Settings,
+  Trash2,
+  Wrench,
+  ClipboardList,
+  ShieldAlert,
+  ShoppingBag,
+  UserCheck,
+  FileText,
+} from "lucide-react";
+import { dataService } from "./lib/dataService";
+import {
+  initialBoms,
+  initialDispatches,
+  initialInvoices,
+  initialLedgerEntries,
+  initialMaterials,
+  initialNotices,
+  initialOrders,
+  initialParties,
+  initialProductionEntries,
+  initialProducts,
+  initialStockMovements,
+} from "./seed";
+import type {
+  Bom,
+  BomLineItem,
+  BreakdownTicket,
+  ClientCategory,
+  ClientFollowUp,
+  ClientInteraction,
+  ClientStatus,
+  Dispatch,
+  InteractionType,
+  Invoice,
+  InvoiceStatus,
+  LedgerEntry,
+  Machine,
+  MachineStatus,
+  Material,
+  MovementType,
+  Order,
+  Party,
+  PartyType,
+  PlantNotice,
+  Product,
+  ProductionEntry,
+  QcInspection,
+  QcInspectionStatus,
+  Shift,
+  StockMovement,
+  WorkOrder,
+  WorkOrderStatus,
+} from "./types";
+
+type View =
+  | "dashboard"
+  | "entry"
+  | "work_orders"
+  | "machines"
+  | "inventory"
+  | "qc"
+  | "dispatch"
+  | "bom"
+  | "billing"
+  | "clients"
+  | "reports"
+  | "notices"
+  | "setup";
+
+const rupee = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 0,
+});
+
+const numberFmt = new Intl.NumberFormat("en-IN");
+const today = new Date().toISOString().slice(0, 10);
+const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+const addDaysFromToday = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
+import {
+  calculateAgingBuckets,
+  isCreditLimitExceeded,
+  isDormant,
+  validateGSTIN,
+  validatePhone,
+} from "./lib/crmUtils";
+
+export default function App() {
+  const [view, setView] = useState<View>("dashboard");
+  const [userRole, setUserRole] = useState<"owner" | "supervisor" | "ca">("owner");
+  const [materials, setMaterials] = useState<Material[]>(initialMaterials);
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [boms, setBoms] = useState<Bom[]>(initialBoms);
+  const [productionEntries, setProductionEntries] = useState<ProductionEntry[]>(initialProductionEntries);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>(initialStockMovements);
+  const [parties, setParties] = useState<Party[]>(initialParties);
+  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>(initialLedgerEntries);
+  const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const [dispatches, setDispatches] = useState<Dispatch[]>(initialDispatches);
+  const [notices, setNotices] = useState<PlantNotice[]>(initialNotices);
+  const [machines, setMachines] = useState<Machine[]>(() => dataService.getMachines());
+  const [breakdownTickets, setBreakdownTickets] = useState<BreakdownTicket[]>(() => dataService.getBreakdownTickets());
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(() => dataService.getWorkOrders());
+  const [qcInspections, setQcInspections] = useState<QcInspection[]>(() => dataService.getQcInspections());
+
+  const [toast, setToast] = useState<string>("Plant Online · Shift 1 Running");
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast("Plant Online · Shift 1 Running"), 4000);
+  };
+
+  const activeBoms = useMemo(() => boms.filter((b) => b.isActive), [boms]);
+  const todayEntries = useMemo(() => productionEntries.filter((e) => e.entryDate === today), [productionEntries]);
+
+  // Aggregated KPI Metrics
+  const totalProducedToday = todayEntries.reduce((sum, e) => sum + e.quantityProduced, 0);
+  const totalRejectedToday = todayEntries.reduce((sum, e) => sum + e.quantityRejected, 0);
+  const dailyTarget = products.reduce((sum, p) => sum + p.dailyTarget, 0);
+  const targetProgress = dailyTarget === 0 ? 0 : Math.min(100, Math.round((totalProducedToday / dailyTarget) * 100));
+  const rejectRate = totalProducedToday + totalRejectedToday === 0 ? 0 : (totalRejectedToday / (totalProducedToday + totalRejectedToday)) * 100;
+  const totalDowntimeMinutes = todayEntries.reduce((sum, e) => sum + e.downtimeMinutes, 0);
+  const lowStockMaterials = materials.filter((m) => m.currentStock <= m.lowStockThreshold);
+
+  // Balances
+  const partyBalances = useMemo(() => {
+    return parties.map((party) => {
+      const entries = ledgerEntries.filter((e) => e.partyId === party.id);
+      const debit = entries.filter((e) => e.type === "debit").reduce((sum, e) => sum + e.amount, 0);
+      const credit = entries.filter((e) => e.type === "credit").reduce((sum, e) => sum + e.amount, 0);
+      return {
+        ...party,
+        debit,
+        credit,
+        balance: debit - credit,
+      };
+    });
+  }, [ledgerEntries, parties]);
+
+  const totalOutstanding = partyBalances.reduce((sum, p) => sum + Math.max(0, p.balance), 0);
+  const overdueInvoices = invoices.filter((i) => i.status === "overdue" || (i.status !== "paid" && i.dueDate < today));
+
+  // Navigation Items
+  const navItems: Array<{ id: View; label: string; icon: React.ReactNode; badge?: string }> = [
+    { id: "dashboard", label: "Plant Dashboard", icon: <Gauge size={18} /> },
+    { id: "entry", label: "Shop-Floor Entry", icon: <Cpu size={18} /> },
+    { id: "inventory", label: "Materials & Stock", icon: <Boxes size={18} />, badge: lowStockMaterials.length > 0 ? `${lowStockMaterials.length} Low` : undefined },
+    { id: "bom", label: "BOM & Recipes", icon: <Layers3 size={18} /> },
+    { id: "billing", label: "GST Invoicing", icon: <ReceiptText size={18} />, badge: overdueInvoices.length > 0 ? `${overdueInvoices.length} Due` : undefined },
+    { id: "clients", label: "Clients & Parties", icon: <Users size={18} /> },
+    { id: "dispatch", label: "Logistics & Dispatch", icon: <Truck size={18} /> },
+    { id: "reports", label: "Production Reports", icon: <BarChart3 size={18} /> },
+    { id: "notices", label: "Plant Bulletins", icon: <Bell size={18} /> },
+    { id: "setup", label: "Setup & Config", icon: <Settings size={18} /> },
+  ];
+
+  // Handler: Add Production Entry with Auto Stock Deduction and Finished Goods increment
+  const handleAddProduction = (form: {
+    productId: string;
+    quantityProduced: number;
+    quantityRejected: number;
+    rejectReason: string;
+    shift: Shift;
+    machineId: string;
+    downtimeMinutes: number;
+    downtimeReason: string;
+  }) => {
+    const product = products.find((p) => p.id === form.productId);
+    const bom = activeBoms.find((b) => b.productId === form.productId);
+
+    if (!product || !bom || form.quantityProduced <= 0) {
+      showToast("Select a product with an active BOM and enter valid output.");
+      return;
+    }
+
+    // Check material shortages
+    const shortages = bom.lineItems
+      .map((line) => {
+        const mat = materials.find((m) => m.id === line.materialId);
+        const req = line.qtyPerUnit * form.quantityProduced;
+        return mat && mat.currentStock < req ? `${mat.name} (Need ${req.toFixed(1)} ${mat.unit}, Stock: ${mat.currentStock})` : null;
+      })
+      .filter(Boolean);
+
+    if (shortages.length > 0) {
+      showToast(`Stock Shortage: ${shortages.join(", ")}`);
+      return;
+    }
+
+    const entryId = createId("pe");
+    const createdAt = new Date().toISOString();
+
+    const newEntry: ProductionEntry = {
+      id: entryId,
+      productId: product.id,
+      bomId: bom.id,
+      quantityProduced: form.quantityProduced,
+      quantityRejected: form.quantityRejected,
+      rejectReason: form.rejectReason,
+      shift: form.shift,
+      machineId: form.machineId,
+      downtimeMinutes: form.downtimeMinutes,
+      downtimeReason: form.downtimeReason,
+      entryDate: today,
+      enteredBy: "Ramesh Sharma (Supervisor)",
+      createdAt,
+    };
+
+    // Auto-generate deduction movements
+    const movements: StockMovement[] = bom.lineItems.map((line) => ({
+      id: createId("sm"),
+      materialId: line.materialId,
+      type: "production_deduction",
+      quantity: Number((line.qtyPerUnit * form.quantityProduced).toFixed(3)),
+      referenceId: entryId,
+      note: `Auto-deducted for ${form.quantityProduced} ${product.unit} of ${product.name}`,
+      createdBy: "Production Engine",
+      createdAt,
+    }));
+
+    // Update raw materials stock
+    setMaterials((current) =>
+      current.map((mat) => {
+        const mov = movements.find((m) => m.materialId === mat.id);
+        return mov ? { ...mat, currentStock: Number((mat.currentStock - mov.quantity).toFixed(3)) } : mat;
+      })
+    );
+
+    // Update finished goods inventory
+    setProducts((current) =>
+      current.map((p) =>
+        p.id === product.id ? { ...p, currentFinishedStock: p.currentFinishedStock + form.quantityProduced } : p
+      )
+    );
+
+    setProductionEntries([newEntry, ...productionEntries]);
+    setStockMovements([...movements, ...stockMovements]);
+    showToast(`✓ Logged ${form.quantityProduced} ${product.unit} of ${product.name}. Materials deducted.`);
+  };
+
+  // Handler: Manual Stock Movement (IN / OUT)
+  const handleStockMovement = (form: {
+    materialId: string;
+    type: "in" | "out";
+    quantity: number;
+    note: string;
+  }) => {
+    const mat = materials.find((m) => m.id === form.materialId);
+    if (!mat || form.quantity <= 0) return;
+
+    if (form.type === "out" && form.quantity > mat.currentStock) {
+      showToast(`Cannot issue more than available stock (${mat.currentStock} ${mat.unit})`);
+      return;
+    }
+
+    const movement: StockMovement = {
+      id: createId("sm"),
+      materialId: mat.id,
+      type: form.type,
+      quantity: form.quantity,
+      note: form.note || (form.type === "in" ? "Purchase Inward" : "Shop-floor Issue"),
+      createdBy: "Store Head",
+      createdAt: new Date().toISOString(),
+    };
+
+    setMaterials((current) =>
+      current.map((m) =>
+        m.id === mat.id
+          ? { ...m, currentStock: Number((m.currentStock + (form.type === "in" ? form.quantity : -form.quantity)).toFixed(3)) }
+          : m
+      )
+    );
+    setStockMovements([movement, ...stockMovements]);
+    showToast(`✓ Stock ${form.type.toUpperCase()} recorded for ${mat.name}`);
+  };
+
+  // Handler: Create Invoice
+  const handleCreateInvoice = (form: {
+    partyId: string;
+    productId: string;
+    quantity: number;
+    rate: number;
+    gstRate: number;
+    paidAmount: number;
+  }) => {
+    const party = parties.find((p) => p.id === form.partyId);
+    const product = products.find((p) => p.id === form.productId);
+    if (!party || !product || form.quantity <= 0 || form.rate <= 0) return;
+
+    const subtotal = form.quantity * form.rate;
+    const gstAmount = Math.round((subtotal * form.gstRate) / 100);
+    const total = subtotal + gstAmount;
+    const invoiceNumber = `INV-26-${1000 + invoices.length + 1}`;
+    const invoiceId = createId("inv");
+    const orderId = createId("ord");
+    const dueDate = addDaysFromToday(party.creditPeriodDays);
+    const createdAt = new Date().toISOString();
+
+    const invoice: Invoice = {
+      id: invoiceId,
+      partyId: party.id,
+      invoiceNumber,
+      items: [{ productId: product.id, quantity: form.quantity, rate: form.rate, gstRate: form.gstRate }],
+      subtotal,
+      gstAmount,
+      total,
+      status: form.paidAmount >= total ? "paid" : "sent",
+      dueDate,
+      createdAt,
+    };
+
+    const order: Order = {
+      id: orderId,
+      orderNumber: `PO-${100 + orders.length + 1}`,
+      partyId: party.id,
+      invoiceId,
+      items: [{ productId: product.id, quantity: form.quantity, rate: form.rate, gstRate: form.gstRate }],
+      status: "open",
+      createdAt,
+    };
+
+    const newLedger: LedgerEntry[] = [
+      { id: createId("le"), partyId: party.id, invoiceId, amount: total, type: "debit", date: today, note: `GST Invoice ${invoiceNumber}` },
+    ];
+    if (form.paidAmount > 0) {
+      newLedger.push({
+        id: createId("le"),
+        partyId: party.id,
+        invoiceId,
+        amount: Math.min(form.paidAmount, total),
+        type: "credit",
+        date: today,
+        note: "Payment received on billing",
+      });
+    }
+
+    setInvoices([invoice, ...invoices]);
+    setOrders([order, ...orders]);
+    setLedgerEntries([...newLedger, ...ledgerEntries]);
+    showToast(`✓ Invoice ${invoiceNumber} created for ${party.name}`);
+  };
+
+  // Handler: Create Dispatch
+  const handleCreateDispatch = (form: {
+    orderId: string;
+    transportProvider: string;
+    trackingId: string;
+    vehicleType: string;
+    cost: number;
+  }) => {
+    const order = orders.find((o) => o.id === form.orderId);
+    const party = parties.find((p) => p.id === order?.partyId);
+    if (!order || !form.transportProvider || !form.trackingId) return;
+
+    const dispatch: Dispatch = {
+      id: createId("disp"),
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      partyName: party?.name ?? "Client",
+      transportProvider: form.transportProvider,
+      trackingId: form.trackingId,
+      vehicleType: form.vehicleType,
+      cost: form.cost,
+      status: "dispatched",
+      createdAt: new Date().toISOString(),
+    };
+
+    setDispatches([dispatch, ...dispatches]);
+    setOrders(orders.map((o) => (o.id === order.id ? { ...o, status: "dispatched" } : o)));
+    showToast(`✓ Dispatch ${dispatch.trackingId} created for order ${order.orderNumber}`);
+  };
+
+  const handleUpdateDispatch = (dispatchId: string, status: Dispatch["status"]) => {
+    const disp = dispatches.find((d) => d.id === dispatchId);
+    if (!disp) return;
+    setDispatches(dispatches.map((d) => (d.id === dispatchId ? { ...d, status } : d)));
+    setOrders(orders.map((o) => (o.id === disp.orderId ? { ...o, status } : o)));
+    showToast(`✓ Dispatch status updated to ${status.toUpperCase()}`);
+  };
+
+  // Handler: Export Production CSV
+  const handleExportCsv = () => {
+    const header = ["Date", "Product", "Produced Qty", "Rejected Qty", "Reject Reason", "Shift", "Machine", "Downtime (Min)", "Downtime Reason", "Supervisor"];
+    const rows = productionEntries.map((e) => {
+      const prod = products.find((p) => p.id === e.productId);
+      return [
+        e.entryDate,
+        prod?.name ?? "Unknown",
+        e.quantityProduced,
+        e.quantityRejected,
+        e.rejectReason,
+        e.shift,
+        e.machineId,
+        e.downtimeMinutes,
+        e.downtimeReason,
+        e.enteredBy,
+      ];
+    });
+
+    const csvContent = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `FactoryOS-Production-Report-${today}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("✓ Production CSV Report downloaded successfully.");
+  };
+
+  return (
+    <div className="app-shell">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="plant-brand">
+          <div className="brand-icon">
+            <Factory size={24} />
+          </div>
+          <div className="brand-title">
+            <h2>Factory OS</h2>
+            <span>Enterprise Plant ERP · v3.4</span>
+          </div>
+        </div>
+
+        <nav>
+          <div className="nav-group-label">OPERATIONS</div>
+          <button className={`nav-item ${view === "dashboard" ? "active" : ""}`} onClick={() => setView("dashboard")}>
+            <Gauge size={18} />
+            <span>Command Center</span>
+          </button>
+          <button className={`nav-item ${view === "entry" ? "active" : ""}`} onClick={() => setView("entry")}>
+            <Cpu size={18} />
+            <span>Production Board</span>
+          </button>
+          <button className={`nav-item ${view === "work_orders" ? "active" : ""}`} onClick={() => setView("work_orders")}>
+            <ClipboardList size={18} />
+            <span>Work Orders</span>
+          </button>
+          <button className={`nav-item ${view === "machines" ? "active" : ""}`} onClick={() => setView("machines")}>
+            <Wrench size={18} />
+            <span>Machines & Maintenance</span>
+            {machines.filter((m) => m.status === "Breakdown").length > 0 && (
+              <span className="nav-badge">{machines.filter((m) => m.status === "Breakdown").length} Down</span>
+            )}
+          </button>
+
+          <div className="nav-group-label">CONTROL</div>
+          <button className={`nav-item ${view === "inventory" ? "active" : ""}`} onClick={() => setView("inventory")}>
+            <Boxes size={18} />
+            <span>Inventory</span>
+            {lowStockMaterials.length > 0 && <span className="nav-badge">{lowStockMaterials.length} Low</span>}
+          </button>
+          <button className={`nav-item ${view === "qc" ? "active" : ""}`} onClick={() => setView("qc")}>
+            <ShieldAlert size={18} />
+            <span>Quality Control</span>
+          </button>
+          <button className={`nav-item ${view === "dispatch" ? "active" : ""}`} onClick={() => setView("dispatch")}>
+            <Truck size={18} />
+            <span>Dispatch & Logistics</span>
+          </button>
+          <button className={`nav-item ${view === "bom" ? "active" : ""}`} onClick={() => setView("bom")}>
+            <Layers3 size={18} />
+            <span>BOM & Recipes</span>
+          </button>
+
+          <div className="nav-group-label">ADMINISTRATION</div>
+          <button className={`nav-item ${view === "clients" ? "active" : ""}`} onClick={() => setView("clients")}>
+            <Users size={18} />
+            <span>Client CRM & Accounts</span>
+          </button>
+          <button className={`nav-item ${view === "billing" ? "active" : ""}`} onClick={() => setView("billing")}>
+            <ReceiptText size={18} />
+            <span>GST Invoicing</span>
+            {overdueInvoices.length > 0 && <span className="nav-badge">{overdueInvoices.length} Due</span>}
+          </button>
+          <button className={`nav-item ${view === "reports" ? "active" : ""}`} onClick={() => setView("reports")}>
+            <BarChart3 size={18} />
+            <span>Production Reports</span>
+          </button>
+          <button className={`nav-item ${view === "notices" ? "active" : ""}`} onClick={() => setView("notices")}>
+            <Bell size={18} />
+            <span>Plant Bulletins</span>
+          </button>
+
+          <div className="nav-group-label">SYSTEM</div>
+          <button className={`nav-item ${view === "setup" ? "active" : ""}`} onClick={() => setView("setup")}>
+            <Settings size={18} />
+            <span>Setup & Masters</span>
+          </button>
+        </nav>
+
+        <div className="user-profile-widget">
+          <div className="avatar-circle">RP</div>
+          <div className="user-meta">
+            <h4>Rajput Plastics Mfg</h4>
+            <span>Plant Owner / GM</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Workspace */}
+      <main className="workspace">
+        {/* Topbar */}
+        <header className="topbar">
+          <div className="topbar-left">
+            <div className="page-title">
+              <h1>
+                {view === "dashboard" && "Factory Command & Analytics Center"}
+                {view === "entry" && "Shop-Floor Live Production Register"}
+                {view === "inventory" && "Raw Material & Inventory Control"}
+                {view === "bom" && "Bill of Materials (BOM) & Product Recipes"}
+                {view === "billing" && "GST Tax Invoicing & Accounts Portal"}
+                {view === "clients" && "Party Directory & Ledger Balances"}
+                {view === "dispatch" && "Logistics, Shipments & Fleet Tracker"}
+                {view === "reports" && "Operational & Material Consumption Reports"}
+                {view === "notices" && "Plant Bulletins & Quality Circulars"}
+                {view === "setup" && "Products, Materials & BOM Setup"}
+              </h1>
+              <p>Plant #1 · Sitapura Industrial Area, Jaipur (RJ)</p>
+            </div>
+          </div>
+
+          <div className="topbar-right">
+            <div className="form-group" style={{ margin: 0 }}>
+              <select
+                className="form-control"
+                style={{ padding: "0.35rem 0.6rem", fontSize: "0.78rem", fontWeight: 700 }}
+                value={userRole}
+                onChange={(e) => {
+                  const role = e.target.value as "owner" | "supervisor" | "ca";
+                  setUserRole(role);
+                  showToast(`Switched active role to ${role.toUpperCase()}`);
+                }}
+              >
+                <option value="owner">Role: Owner (Full Access)</option>
+                <option value="supervisor">Role: Supervisor (No CRM Access)</option>
+                <option value="ca">Role: CA / Accountant (Read-Only)</option>
+              </select>
+            </div>
+            <div className="shift-badge">
+              <Clock size={14} color="#0f766e" />
+              <span>Shift: Morning (08:00 - 16:00)</span>
+            </div>
+            <div className="toast-badge">
+              <span className="live-pulse-dot" />
+              <span>{toast}</span>
+            </div>
+          </div>
+        </header>
+
+        {/* View Content Body */}
+        <div className="view-body">
+          {view === "dashboard" && (
+            <DashboardView
+              targetProgress={targetProgress}
+              totalProduced={totalProducedToday}
+              dailyTarget={dailyTarget}
+              rejectRate={rejectRate}
+              lowStockCount={lowStockMaterials.length}
+              downtimeMinutes={totalDowntimeMinutes}
+              totalOutstanding={totalOutstanding}
+              products={products}
+              entries={todayEntries}
+              invoices={invoices}
+              dispatches={dispatches}
+              notices={notices}
+              setView={setView}
+            />
+          )}
+
+          {view === "entry" && (
+            <ProductionEntryView
+              products={products}
+              activeBoms={activeBoms}
+              materials={materials}
+              todayEntries={todayEntries}
+              onAddEntry={handleAddProduction}
+            />
+          )}
+
+          {view === "inventory" && (
+            <InventoryView
+              materials={materials}
+              stockMovements={stockMovements}
+              onAddMovement={handleStockMovement}
+            />
+          )}
+
+          {view === "bom" && (
+            <BomView
+              products={products}
+              boms={boms}
+              materials={materials}
+            />
+          )}
+
+          {view === "billing" && (
+            <BillingView
+              invoices={invoices}
+              parties={parties}
+              products={products}
+              totalOutstanding={totalOutstanding}
+              overdueCount={overdueInvoices.length}
+              onCreateInvoice={handleCreateInvoice}
+            />
+          )}
+
+          {view === "clients" && (
+            <ClientsCrmView
+              parties={parties}
+              partyBalances={partyBalances}
+              ledgerEntries={ledgerEntries}
+              invoices={invoices}
+              userRole={userRole}
+              onClientCreated={(newClient) => setParties(dataService.getParties())}
+              setView={setView}
+              showToast={showToast}
+            />
+          )}
+
+          {view === "dispatch" && (
+            <DispatchView
+              dispatches={dispatches}
+              orders={orders}
+              parties={parties}
+              onCreateDispatch={handleCreateDispatch}
+              onUpdateStatus={handleUpdateDispatch}
+            />
+          )}
+
+          {view === "reports" && (
+            <ReportsView
+              entries={productionEntries}
+              products={products}
+              materials={materials}
+              boms={boms}
+              onExport={handleExportCsv}
+            />
+          )}
+
+          {view === "notices" && (
+            <NoticesView
+              notices={notices}
+              onAddNotice={(n) => {
+                setNotices([n, ...notices]);
+                showToast("✓ New Plant Bulletin Broadcasted.");
+              }}
+            />
+          )}
+
+          {view === "setup" && (
+            <SetupView
+              products={products}
+              materials={materials}
+              boms={boms}
+              onProductCreated={(p) => setProducts(dataService.getProducts())}
+              onMaterialCreated={(m) => {
+                setMaterials(dataService.getMaterials());
+                setStockMovements(dataService.getStockMovements());
+              }}
+              onBomSaved={(b) => setBoms(dataService.getBoms())}
+              showToast={showToast}
+            />
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* =========================================================================
+   1. DASHBOARD VIEW
+========================================================================= */
+function DashboardView({
+  targetProgress,
+  totalProduced,
+  dailyTarget,
+  rejectRate,
+  lowStockCount,
+  downtimeMinutes,
+  totalOutstanding,
+  products,
+  entries,
+  invoices,
+  dispatches,
+  notices,
+  setView,
+}: {
+  targetProgress: number;
+  totalProduced: number;
+  dailyTarget: number;
+  rejectRate: number;
+  lowStockCount: number;
+  downtimeMinutes: number;
+  totalOutstanding: number;
+  products: Product[];
+  entries: ProductionEntry[];
+  invoices: Invoice[];
+  dispatches: Dispatch[];
+  notices: PlantNotice[];
+  setView: (v: View) => void;
+}) {
+  return (
+    <>
+      {/* Metric KPI Cards */}
+      <div className="metric-grid">
+        <div className="metric-card">
+          <div className="metric-icon-box teal">
+            <Gauge size={26} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Today's Output</span>
+            <span className="metric-value">{numberFmt.format(totalProduced)} <small style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>/ {numberFmt.format(dailyTarget)}</small></span>
+            <span className="metric-sub">{targetProgress}% of Daily Target</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-icon-box green">
+            <TrendingUp size={26} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Reject Rate</span>
+            <span className="metric-value">{rejectRate.toFixed(1)}%</span>
+            <span className="metric-sub">{rejectRate < 3 ? "✓ Quality in control" : "⚠ Check mold cooling"}</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-icon-box amber">
+            <AlertTriangle size={26} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Low Stock Alerts</span>
+            <span className="metric-value">{lowStockCount}</span>
+            <span className="metric-sub">{lowStockCount === 0 ? "Inventory Healthy" : "Needs Purchase Inward"}</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-icon-box purple">
+            <IndianRupee size={26} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Outstanding Dues</span>
+            <span className="metric-value">{rupee.format(totalOutstanding)}</span>
+            <span className="metric-sub">Client receivable balance</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Action Tiles */}
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Quick Plant Operations</h3>
+            <p>Direct shortcuts to operator and managerial actions</p>
+          </div>
+        </div>
+        <div className="quick-action-strip">
+          <button className="quick-action-btn" onClick={() => setView("entry")}>
+            <div className="icon-box" style={{ background: "var(--primary-light)", color: "var(--primary)" }}>
+              <Plus size={22} />
+            </div>
+            <span>Log Production</span>
+          </button>
+          <button className="quick-action-btn" onClick={() => setView("inventory")}>
+            <div className="icon-box" style={{ background: "var(--success-bg)", color: "var(--success)" }}>
+              <PackagePlus size={22} />
+            </div>
+            <span>Stock In / Out</span>
+          </button>
+          <button className="quick-action-btn" onClick={() => setView("billing")}>
+            <div className="icon-box" style={{ background: "var(--purple-bg)", color: "var(--purple)" }}>
+              <ReceiptText size={22} />
+            </div>
+            <span>Create GST Invoice</span>
+          </button>
+          <button className="quick-action-btn" onClick={() => setView("dispatch")}>
+            <div className="icon-box" style={{ background: "var(--warning-bg)", color: "var(--warning)" }}>
+              <Truck size={22} />
+            </div>
+            <span>Dispatch Order</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2-Column Section */}
+      <div className="grid-2">
+        {/* Production Progress By Product */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Today's Output by Product</h3>
+              <p>Live progress tracking against daily production targets</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            {products.map((p) => {
+              const produced = entries
+                .filter((e) => e.productId === p.id)
+                .reduce((sum, e) => sum + e.quantityProduced, 0);
+              const progress = Math.min(100, Math.round((produced / p.dailyTarget) * 100));
+
+              return (
+                <div key={p.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.25rem" }}>
+                    <strong>{p.name}</strong>
+                    <span>
+                      <strong>{produced}</strong> / {p.dailyTarget} {p.unit} ({progress}%)
+                    </span>
+                  </div>
+                  <div className="progress-track">
+                    <div className="progress-fill" style={{ width: `${progress}%` }} />
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                    Finished Goods in Stock: <strong>{p.currentFinishedStock} {p.unit}</strong>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Live Plant Bulletins */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Plant Bulletins & Quality Alerts</h3>
+              <p>Maintenance, quality and shift announcements</p>
+            </div>
+            <button className="btn-outline btn-sm" onClick={() => setView("notices")}>
+              View All <ChevronRight size={14} />
+            </button>
+          </div>
+          <div>
+            {notices.map((n) => (
+              <div key={n.id} className={`notice-item ${n.priority.toLowerCase()}`}>
+                <div className="notice-meta">
+                  <span><strong>{n.issuedBy}</strong> · Shift: <span className="badge badge-teal">{n.targetShift}</span></span>
+                  <span>{n.date} · <span className={`badge badge-${n.priority === "Urgent" ? "danger" : "warning"}`}>{n.priority}</span></span>
+                </div>
+                <h4>{n.title}</h4>
+                <p>{n.content}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Dispatches Tracker */}
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Active Logistics & Shipments</h3>
+            <p>Vehicles dispatched and in-transit to clients</p>
+          </div>
+          <button className="btn-outline btn-sm" onClick={() => setView("dispatch")}>
+            Full Tracker <ChevronRight size={14} />
+          </button>
+        </div>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Order #</th>
+                <th>Client Name</th>
+                <th>Transport Provider</th>
+                <th>Tracking / Vehicle #</th>
+                <th>Freight Cost</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dispatches.map((d) => (
+                <tr key={d.id}>
+                  <td><strong>{d.orderNumber}</strong></td>
+                  <td>{d.partyName}</td>
+                  <td>{d.transportProvider} ({d.vehicleType})</td>
+                  <td><code>{d.trackingId}</code></td>
+                  <td>{rupee.format(d.cost)}</td>
+                  <td>
+                    <span className={`badge badge-${d.status === "delivered" ? "success" : d.status === "in_transit" ? "warning" : "info"}`}>
+                      {d.status.replace("_", " ").toUpperCase()}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* =========================================================================
+   2. SHOP-FLOOR PRODUCTION ENTRY VIEW
+========================================================================= */
+function ProductionEntryView({
+  products,
+  activeBoms,
+  materials,
+  todayEntries,
+  onAddEntry,
+}: {
+  products: Product[];
+  activeBoms: Bom[];
+  materials: Material[];
+  todayEntries: ProductionEntry[];
+  onAddEntry: (form: any) => void;
+}) {
+  const [form, setForm] = useState({
+    productId: products[0]?.id ?? "",
+    quantityProduced: "",
+    quantityRejected: "0",
+    rejectReason: "",
+    shift: "Morning (08:00 - 16:00)" as Shift,
+    machineId: "Injection Molding Machine #01 (L&T 250T)",
+    downtimeMinutes: "0",
+    downtimeReason: "",
+  });
+
+  const selectedProduct = products.find((p) => p.id === form.productId);
+  const selectedBom = activeBoms.find((b) => b.productId === form.productId);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.productId || Number(form.quantityProduced) <= 0) return;
+
+    onAddEntry({
+      productId: form.productId,
+      quantityProduced: Number(form.quantityProduced),
+      quantityRejected: Number(form.quantityRejected || 0),
+      rejectReason: form.rejectReason.trim(),
+      shift: form.shift,
+      machineId: form.machineId,
+      downtimeMinutes: Number(form.downtimeMinutes || 0),
+      downtimeReason: form.downtimeReason.trim(),
+    });
+
+    setForm((cur) => ({
+      ...cur,
+      quantityProduced: "",
+      quantityRejected: "0",
+      rejectReason: "",
+      downtimeMinutes: "0",
+      downtimeReason: "",
+    }));
+  };
+
+  return (
+    <div className="content-grid">
+      <div className="grid-2">
+        {/* Entry Form */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Shop-Floor Operator Entry Form</h3>
+              <p>Log output batch & automatically deduct BOM raw materials</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="form-panel">
+            <div className="form-group">
+              <label>Select Product *</label>
+              <select
+                className="form-control"
+                value={form.productId}
+                onChange={(e) => setForm({ ...form, productId: e.target.value })}
+              >
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Produced Qty ({selectedProduct?.unit || "units"}) *</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  className="form-control"
+                  placeholder="e.g. 250"
+                  value={form.quantityProduced}
+                  onChange={(e) => setForm({ ...form, quantityProduced: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Rejected Qty ({selectedProduct?.unit || "units"})</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="form-control"
+                  value={form.quantityRejected}
+                  onChange={(e) => setForm({ ...form, quantityRejected: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {Number(form.quantityRejected) > 0 && (
+              <div className="form-group">
+                <label>Reject Reason / Defect Note</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Warping, Short shot, Flash"
+                  value={form.rejectReason}
+                  onChange={(e) => setForm({ ...form, rejectReason: e.target.value })}
+                />
+              </div>
+            )}
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Active Shift</label>
+                <select
+                  className="form-control"
+                  value={form.shift}
+                  onChange={(e) => setForm({ ...form, shift: e.target.value as Shift })}
+                >
+                  <option value="Morning (08:00 - 16:00)">Morning (08:00 - 16:00)</option>
+                  <option value="Evening (16:00 - 00:00)">Evening (16:00 - 00:00)</option>
+                  <option value="Night (00:00 - 08:00)">Night (00:00 - 08:00)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Machine / Workstation</label>
+                <select
+                  className="form-control"
+                  value={form.machineId}
+                  onChange={(e) => setForm({ ...form, machineId: e.target.value })}
+                >
+                  <option value="Injection Molding Machine #01 (L&T 250T)">L&T 250T (Machine #01)</option>
+                  <option value="Injection Molding Machine #02 (Windsor 180T)">Windsor 180T (Machine #02)</option>
+                  <option value="Auxiliary Assembly Station">Auxiliary Assembly</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Downtime (Minutes)</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="form-control"
+                  value={form.downtimeMinutes}
+                  onChange={(e) => setForm({ ...form, downtimeMinutes: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Downtime Reason</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Die cleaning, Material feeder reload"
+                  value={form.downtimeReason}
+                  onChange={(e) => setForm({ ...form, downtimeReason: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="btn-primary" style={{ width: "100%", justifyContent: "center", marginTop: "0.5rem" }}>
+              <CheckCircle size={18} /> Save Batch & Deduct BOM Stock
+            </button>
+          </form>
+        </div>
+
+        {/* Live BOM Breakdown Card */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Active BOM Deduction Preview</h3>
+              <p>Locked recipe version: <strong>v{selectedBom?.version ?? 1}</strong></p>
+            </div>
+            <span className="badge badge-teal">BOM v{selectedBom?.version} Active</span>
+          </div>
+
+          <div style={{ background: "var(--primary-light)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", fontSize: "0.85rem" }}>
+            <div>Target Product: <strong>{selectedProduct?.name}</strong></div>
+            <div>Estimated batch size: <strong>{Number(form.quantityProduced) || 0} {selectedProduct?.unit}</strong></div>
+          </div>
+
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th>Per Unit Qty</th>
+                  <th>Batch Requirement</th>
+                  <th>Current Stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedBom?.lineItems.map((line) => {
+                  const mat = materials.find((m) => m.id === line.materialId);
+                  const req = line.qtyPerUnit * (Number(form.quantityProduced) || 0);
+                  const isShort = mat ? mat.currentStock < req : false;
+
+                  return (
+                    <tr key={line.materialId}>
+                      <td><strong>{mat?.name}</strong></td>
+                      <td>{line.qtyPerUnit} {mat?.unit}</td>
+                      <td><strong style={{ color: isShort ? "var(--danger)" : "var(--primary)" }}>{req.toFixed(2)} {mat?.unit}</strong></td>
+                      <td>
+                        <span className={`badge badge-${isShort ? "danger" : "success"}`}>
+                          {mat?.currentStock} {mat?.unit}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Today's Log History */}
+      <div className="panel wide">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Today's Production Run Log ({todayEntries.length} Batches)</h3>
+            <p>Real-time audit register recorded on the shop floor</p>
+          </div>
+        </div>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Product</th>
+                <th>Produced</th>
+                <th>Rejected</th>
+                <th>Shift</th>
+                <th>Machine</th>
+                <th>Downtime</th>
+                <th>Supervisor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {todayEntries.map((e) => {
+                const prod = products.find((p) => p.id === e.productId);
+                return (
+                  <tr key={e.id}>
+                    <td>{e.createdAt.slice(11, 16)}</td>
+                    <td><strong>{prod?.name}</strong></td>
+                    <td><strong style={{ color: "var(--success)" }}>+{e.quantityProduced} {prod?.unit}</strong></td>
+                    <td>{e.quantityRejected > 0 ? <span className="badge badge-danger">{e.quantityRejected}</span> : "-"}</td>
+                    <td><span className="badge badge-info">{e.shift.slice(0, 7)}</span></td>
+                    <td><small>{e.machineId}</small></td>
+                    <td>{e.downtimeMinutes > 0 ? `${e.downtimeMinutes}m (${e.downtimeReason})` : "-"}</td>
+                    <td>{e.enteredBy}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   3. INVENTORY & STOCK VIEW
+========================================================================= */
+function InventoryView({
+  materials,
+  stockMovements,
+  onAddMovement,
+}: {
+  materials: Material[];
+  stockMovements: StockMovement[];
+  onAddMovement: (form: any) => void;
+}) {
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [form, setForm] = useState({
+    materialId: materials[0]?.id ?? "",
+    type: "in" as "in" | "out",
+    quantity: "",
+    note: "",
+  });
+
+  const filtered = materials.filter(
+    (m) =>
+      m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.category.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.materialId || Number(form.quantity) <= 0) return;
+
+    onAddMovement({
+      materialId: form.materialId,
+      type: form.type,
+      quantity: Number(form.quantity),
+      note: form.note.trim(),
+    });
+
+    setShowModal(false);
+    setForm({ materialId: materials[0]?.id ?? "", type: "in", quantity: "", note: "" });
+  };
+
+  return (
+    <>
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Raw Material Inventory Master ({materials.length} Items)</h3>
+            <p>Live inventory stocks, reorder thresholds, and warehouse valuation</p>
+          </div>
+          <button className="btn-primary" onClick={() => setShowModal(!showModal)}>
+            <PackagePlus size={18} /> Record Stock IN / OUT
+          </button>
+        </div>
+
+        {/* Search */}
+        <div style={{ marginBottom: "1.25rem", position: "relative", maxWidth: "420px" }}>
+          <input
+            className="form-control"
+            style={{ width: "100%", paddingLeft: "2.2rem" }}
+            placeholder="Search material by name, item code, category..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <Search size={16} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+        </div>
+
+        {/* Materials Table */}
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Material Name</th>
+                <th>Category</th>
+                <th>Current Stock</th>
+                <th>Reorder Threshold</th>
+                <th>Unit Cost</th>
+                <th>Valuation</th>
+                <th>Stock Health</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((m) => {
+                const isLow = m.currentStock <= m.lowStockThreshold;
+                const value = m.currentStock * m.unitCost;
+
+                return (
+                  <tr key={m.id}>
+                    <td><code>{m.code}</code></td>
+                    <td><strong>{m.name}</strong></td>
+                    <td><span className="badge badge-purple">{m.category}</span></td>
+                    <td><strong>{m.currentStock} {m.unit}</strong></td>
+                    <td>{m.lowStockThreshold} {m.unit}</td>
+                    <td>{rupee.format(m.unitCost)}</td>
+                    <td>{rupee.format(value)}</td>
+                    <td>
+                      <span className={`badge badge-${isLow ? "danger" : "success"}`}>
+                        {isLow ? "Low Stock (Reorder)" : "Healthy"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Stock IN / OUT Modal */}
+      {showModal && (
+        <div className="panel" style={{ border: "2px solid var(--primary)", marginTop: "1.5rem" }}>
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Manual Stock Movement Entry</h3>
+              <p>Inward supplier purchases or issue material to shop floor</p>
+            </div>
+            <button className="btn-outline btn-sm" onClick={() => setShowModal(false)}>Close</button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="form-grid">
+            <div className="form-group">
+              <label>Select Material *</label>
+              <select
+                className="form-control"
+                value={form.materialId}
+                onChange={(e) => setForm({ ...form, materialId: e.target.value })}
+              >
+                {materials.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} (Stock: {m.currentStock} {m.unit})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Movement Type *</label>
+              <select
+                className="form-control"
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value as "in" | "out" })}
+              >
+                <option value="in">STOCK IN (+) (Supplier Purchase Inward)</option>
+                <option value="out">STOCK OUT (-) (Direct Shop Floor Issue)</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Quantity *</label>
+              <input
+                type="number"
+                min="0.1"
+                step="any"
+                required
+                className="form-control"
+                placeholder="Quantity"
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Reference / Note</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="e.g. PO-8821 from Supplier"
+                value={form.note}
+                onChange={(e) => setForm({ ...form, note: e.target.value })}
+              />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: "1rem" }}>
+              <button type="button" className="btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
+              <button type="submit" className="btn-primary"><CheckCircle size={18} /> Record Movement</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Audit Stock Movement Trail */}
+      <div className="panel wide">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Recent Stock Movement Audit Trail</h3>
+            <p>Chronological inward/outward and automated production consumption ledger</p>
+          </div>
+        </div>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Date & Time</th>
+                <th>Material</th>
+                <th>Movement Type</th>
+                <th>Quantity</th>
+                <th>Reason / Reference</th>
+                <th>Logged By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockMovements.slice(0, 10).map((mov) => {
+                const mat = materials.find((m) => m.id === mov.materialId);
+                const isIn = mov.type === "in";
+
+                return (
+                  <tr key={mov.id}>
+                    <td>{mov.createdAt.slice(0, 16).replace("T", " ")}</td>
+                    <td><strong>{mat?.name}</strong></td>
+                    <td>
+                      <span className={`badge badge-${isIn ? "success" : "warning"}`}>
+                        {mov.type.replace("_", " ").toUpperCase()}
+                      </span>
+                    </td>
+                    <td>
+                      <strong style={{ color: isIn ? "var(--success)" : "var(--danger)" }}>
+                        {isIn ? `+${mov.quantity}` : `-${mov.quantity}`} {mat?.unit}
+                      </strong>
+                    </td>
+                    <td>{mov.note}</td>
+                    <td>{mov.createdBy}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* =========================================================================
+   4. BOM & RECIPES VIEW
+========================================================================= */
+function BomView({
+  products,
+  boms,
+  materials,
+}: {
+  products: Product[];
+  boms: Bom[];
+  materials: Material[];
+}) {
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div className="panel-title">
+          <h3>Bill of Materials (BOM) Master Recipes</h3>
+          <p>Standard raw material formulation per finished product piece</p>
+        </div>
+      </div>
+
+      <div className="grid-3">
+        {products.map((p) => {
+          const bom = boms.find((b) => b.productId === p.id && b.isActive);
+          const rawMaterialCost = (bom?.lineItems || []).reduce((sum, line) => {
+            const mat = materials.find((m) => m.id === line.materialId);
+            return sum + (mat ? mat.unitCost * line.qtyPerUnit : 0);
+          }, 0);
+
+          return (
+            <div key={p.id} className="panel" style={{ border: "1px solid var(--card-border)" }}>
+              <div className="panel-header">
+                <div>
+                  <span className="badge badge-teal">{p.code}</span>
+                  <h4 style={{ fontSize: "1.05rem", marginTop: "0.35rem" }}>{p.name}</h4>
+                </div>
+                <span className="badge badge-success">v{bom?.version} Active</span>
+              </div>
+
+              <div style={{ background: "#f8fafc", padding: "0.75rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", fontSize: "0.82rem" }}>
+                <div>Raw Material Cost: <strong>{rupee.format(rawMaterialCost)} / unit</strong></div>
+                <div>Selling Price: <strong>{rupee.format(p.sellingPrice)} / unit</strong></div>
+              </div>
+
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Material</th>
+                      <th>Qty / {p.unit}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bom?.lineItems.map((line) => {
+                      const mat = materials.find((m) => m.id === line.materialId);
+                      return (
+                        <tr key={line.materialId}>
+                          <td><strong>{mat?.name}</strong></td>
+                          <td>{line.qtyPerUnit} {mat?.unit}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   5. GST BILLING VIEW
+========================================================================= */
+function BillingView({
+  invoices,
+  parties,
+  products,
+  totalOutstanding,
+  overdueCount,
+  onCreateInvoice,
+}: {
+  invoices: Invoice[];
+  parties: Party[];
+  products: Product[];
+  totalOutstanding: number;
+  overdueCount: number;
+  onCreateInvoice: (form: any) => void;
+}) {
+  const [form, setForm] = useState({
+    partyId: parties[0]?.id ?? "",
+    productId: products[0]?.id ?? "",
+    quantity: "",
+    rate: "",
+    gstRate: "18",
+    paidAmount: "0",
+  });
+
+  const selectedProduct = products.find((p) => p.id === form.productId);
+  const qty = Number(form.quantity || 0);
+  const rate = Number(form.rate || (selectedProduct ? selectedProduct.sellingPrice : 0));
+  const subtotal = qty * rate;
+  const gstAmount = Math.round((subtotal * Number(form.gstRate)) / 100);
+  const total = subtotal + gstAmount;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.partyId || !form.productId || qty <= 0 || rate <= 0) return;
+
+    onCreateInvoice({
+      partyId: form.partyId,
+      productId: form.productId,
+      quantity: qty,
+      rate,
+      gstRate: Number(form.gstRate),
+      paidAmount: Number(form.paidAmount || 0),
+    });
+
+    setForm({ partyId: parties[0]?.id ?? "", productId: products[0]?.id ?? "", quantity: "", rate: "", gstRate: "18", paidAmount: "0" });
+  };
+
+  return (
+    <div className="content-grid">
+      <div className="grid-2">
+        {/* Create Invoice Form */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Generate GST Tax Invoice</h3>
+              <p>Create digital invoice and automatically add to client ledger</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="form-panel">
+            <div className="form-group">
+              <label>Select Customer / Client *</label>
+              <select
+                className="form-control"
+                value={form.partyId}
+                onChange={(e) => setForm({ ...form, partyId: e.target.value })}
+              >
+                {parties.filter((p) => p.type === "Customer").map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.city})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Select Finished Product *</label>
+              <select
+                className="form-control"
+                value={form.productId}
+                onChange={(e) => {
+                  const p = products.find((prod) => prod.id === e.target.value);
+                  setForm({ ...form, productId: e.target.value, rate: p ? p.sellingPrice.toString() : "" });
+                }}
+              >
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} (Stock: {p.currentFinishedStock} {p.unit})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Billing Quantity ({selectedProduct?.unit || "pcs"}) *</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  className="form-control"
+                  placeholder="e.g. 100"
+                  value={form.quantity}
+                  onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Unit Rate (₹)</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  className="form-control"
+                  placeholder="Rate"
+                  value={form.rate || (selectedProduct ? selectedProduct.sellingPrice.toString() : "")}
+                  onChange={(e) => setForm({ ...form, rate: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label>GST Slab Rate (%)</label>
+                <select
+                  className="form-control"
+                  value={form.gstRate}
+                  onChange={(e) => setForm({ ...form, gstRate: e.target.value })}
+                >
+                  <option value="0">0% (Exempted)</option>
+                  <option value="5">5% GST</option>
+                  <option value="12">12% GST</option>
+                  <option value="18">18% GST (Standard)</option>
+                  <option value="28">28% GST</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Advance Payment Received (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="form-control"
+                  value={form.paidAmount}
+                  onChange={(e) => setForm({ ...form, paidAmount: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {total > 0 && (
+              <div style={{ background: "var(--primary-light)", padding: "0.85rem", borderRadius: "var(--radius-md)", fontSize: "0.85rem" }}>
+                <div>Subtotal: <strong>{rupee.format(subtotal)}</strong> + GST ({form.gstRate}%): <strong>{rupee.format(gstAmount)}</strong></div>
+                <div style={{ fontSize: "1.1rem", marginTop: "0.3rem", color: "var(--primary-hover)" }}>Invoice Total: <strong>{rupee.format(total)}</strong></div>
+              </div>
+            )}
+
+            <button type="submit" className="btn-primary" style={{ width: "100%", justifyContent: "center" }}>
+              <ReceiptText size={18} /> Generate Tax Invoice
+            </button>
+          </form>
+        </div>
+
+        {/* Invoice Summary & Metrics */}
+        <div className="panel">
+          <div className="metric-grid" style={{ marginBottom: "1.25rem" }}>
+            <div className="metric-card" style={{ padding: "1rem" }}>
+              <div className="metric-data">
+                <span className="metric-label">Outstanding</span>
+                <span className="metric-value" style={{ fontSize: "1.3rem" }}>{rupee.format(totalOutstanding)}</span>
+              </div>
+            </div>
+            <div className="metric-card" style={{ padding: "1rem" }}>
+              <div className="metric-data">
+                <span className="metric-label">Overdue Bills</span>
+                <span className="metric-value" style={{ fontSize: "1.3rem", color: "var(--danger)" }}>{overdueCount}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>GST Invoices Master</h3>
+              <p>Downloadable and shareable invoices</p>
+            </div>
+          </div>
+
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice #</th>
+                  <th>Client</th>
+                  <th>Total Amount</th>
+                  <th>Status</th>
+                  <th>Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((inv) => {
+                  const party = parties.find((p) => p.id === inv.partyId);
+                  const isOverdue = inv.status === "overdue" || (inv.status !== "paid" && inv.dueDate < today);
+
+                  return (
+                    <tr key={inv.id}>
+                      <td><strong>{inv.invoiceNumber}</strong></td>
+                      <td>{party?.name}</td>
+                      <td><strong>{rupee.format(inv.total)}</strong></td>
+                      <td>
+                        <span className={`badge badge-${inv.status === "paid" ? "success" : isOverdue ? "danger" : "warning"}`}>
+                          {isOverdue && inv.status !== "paid" ? "Overdue" : inv.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td>
+                        <a
+                          className="btn-whatsapp"
+                          href={`https://wa.me/${party?.phone}?text=${encodeURIComponent(`Dear ${party?.name}, Tax Invoice ${inv.invoiceNumber} for ${rupee.format(inv.total)} from Rajput Plastics is ready. Due Date: ${inv.dueDate}. Please arrange the payment.`)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <MessageCircle size={14} /> WhatsApp
+                        </a>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   6. CLIENT CRM & RECEIVABLES PORTAL
+========================================================================= */
+function ClientsCrmView({
+  parties,
+  partyBalances,
+  ledgerEntries,
+  invoices,
+  userRole,
+  onClientCreated,
+  setView,
+  showToast,
+}: {
+  parties: Party[];
+  partyBalances: any[];
+  ledgerEntries: LedgerEntry[];
+  invoices: Invoice[];
+  userRole: "owner" | "supervisor" | "ca";
+  onClientCreated: (client: Party) => void;
+  setView: (v: View) => void;
+  showToast: (msg: string) => void;
+}) {
+  // ROLE SECURITY GUARD: Supervisor has NO access to CRM
+  if (userRole === "supervisor") {
+    return (
+      <div className="panel" style={{ borderLeft: "4px solid var(--danger)", padding: "2rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", color: "var(--danger)" }}>
+          <AlertTriangle size={32} />
+          <div>
+            <h2 style={{ fontSize: "1.25rem", fontWeight: 800 }}>Access Denied (RBAC Security Guard)</h2>
+            <p style={{ color: "var(--text-muted)", marginTop: "0.25rem" }}>
+              Shop-Floor Supervisors do not have permission to view Client CRM, Accounts, or Receivables data.
+              This route is restricted to Plant Owners and CA / Accountants.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const isReadOnly = userRole === "ca";
+
+  // State
+  const [selectedClientId, setSelectedClientId] = useState<string>(partyBalances[0]?.id ?? "");
+  const [filterCard, setFilterCard] = useState<"all" | "active" | "dormant" | "overdue60" | "dueToday">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  // Follow-ups & Timeline state
+  const [dueFollowUps, setDueFollowUps] = useState<ClientFollowUp[]>(() => dataService.listDueFollowUps(today));
+  const [interactions, setInteractions] = useState<ClientInteraction[]>(() =>
+    selectedClientId ? dataService.listInteractions(selectedClientId) : []
+  );
+
+  // New Client Form state
+  const [clientForm, setClientForm] = useState({
+    name: "",
+    phone: "",
+    whatsapp: "",
+    city: "Jaipur",
+    gstin: "",
+    type: "Customer" as PartyType,
+    clientCategory: "dealer" as ClientCategory,
+    tags: "Dealer, Regional",
+    creditLimit: "150000",
+    payment_terms_days: "15",
+    notes: "",
+  });
+  const [formError, setFormError] = useState("");
+
+  // New Interaction Form state
+  const [interactionForm, setInteractionForm] = useState({
+    type: "call" as InteractionType,
+    text: "",
+  });
+
+  // New Follow-up Form state
+  const [followUpForm, setFollowUpForm] = useState({
+    dueDate: today,
+    reason: "",
+  });
+
+  // Sync interactions when selectedClientId changes
+  useEffect(() => {
+    if (selectedClientId) {
+      setInteractions(dataService.listInteractions(selectedClientId));
+    }
+  }, [selectedClientId]);
+
+  // Compute Client KPIs
+  const clientBalances = useMemo(() => {
+    return partyBalances.map((party) => {
+      const partyInvoices = invoices.filter((i) => i.partyId === party.id);
+      const partyLedger = ledgerEntries.filter((e) => e.partyId === party.id);
+      const totalPayments = partyLedger.filter((e) => e.type === "credit").reduce((sum, e) => sum + e.amount, 0);
+
+      const aging = calculateAgingBuckets(partyInvoices, totalPayments, today);
+      const dormant = isDormant(party.lastOrderDate, today);
+      const computedStatus: ClientStatus = party.status === "blocked" ? "blocked" : dormant ? "dormant" : party.lastOrderDate ? "active" : "lead";
+
+      return {
+        ...party,
+        aging,
+        computedStatus,
+        isOverCredit: isCreditLimitExceeded(party.balance, party.creditLimit),
+      };
+    });
+  }, [partyBalances, invoices, ledgerEntries]);
+
+  // Dashboard Aggregates
+  const totalClients = clientBalances.length;
+  const activeCount = clientBalances.filter((c) => c.computedStatus === "active" || c.computedStatus === "lead").length;
+  const dormantCount = clientBalances.filter((c) => c.computedStatus === "dormant").length;
+  const totalOutstanding = clientBalances.reduce((sum, c) => sum + Math.max(0, c.balance), 0);
+  const overdue60Amount = clientBalances.reduce((sum, c) => sum + c.aging.totalOverdue60Plus, 0);
+  const callsDueCount = dueFollowUps.length;
+
+  // Filtered Client List
+  const filteredClients = useMemo(() => {
+    return clientBalances.filter((c) => {
+      // Filter by card selection
+      if (filterCard === "active" && c.computedStatus !== "active" && c.computedStatus !== "lead") return false;
+      if (filterCard === "dormant" && c.computedStatus !== "dormant") return false;
+      if (filterCard === "overdue60" && c.aging.totalOverdue60Plus <= 0) return false;
+
+      // Category filter
+      if (categoryFilter !== "all" && c.clientCategory !== categoryFilter) return false;
+
+      // Search query
+      if (searchQuery.trim() !== "") {
+        const q = searchQuery.toLowerCase();
+        const matchesName = c.name.toLowerCase().includes(q);
+        const matchesPhone = c.phone.includes(q);
+        const matchesCity = c.city.toLowerCase().includes(q);
+        const matchesTags = c.tags?.some((t: string) => t.toLowerCase().includes(q));
+        if (!matchesName && !matchesPhone && !matchesCity && !matchesTags) return false;
+      }
+
+      return true;
+    });
+  }, [clientBalances, filterCard, categoryFilter, searchQuery]);
+
+  const selectedClient = clientBalances.find((c) => c.id === selectedClientId) ?? filteredClients[0] ?? clientBalances[0];
+
+  // Handlers
+  const handleAddClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+
+    try {
+      const newClient = dataService.createClient({
+        name: clientForm.name,
+        phone: clientForm.phone,
+        type: clientForm.type,
+        clientCategory: clientForm.clientCategory,
+        whatsapp: clientForm.whatsapp || clientForm.phone,
+        city: clientForm.city,
+        gstin: clientForm.gstin,
+        tags: clientForm.tags.split(",").map((t) => t.trim()).filter(Boolean),
+        creditLimit: Number(clientForm.creditLimit || 0),
+        payment_terms_days: Number(clientForm.payment_terms_days || 15),
+        notes: clientForm.notes,
+      });
+
+      onClientCreated(newClient);
+      setSelectedClientId(newClient.id);
+      setShowAddModal(false);
+      showToast(`✓ Client "${newClient.name}" created successfully.`);
+
+      setClientForm({
+        name: "",
+        phone: "",
+        whatsapp: "",
+        city: "Jaipur",
+        gstin: "",
+        type: "Customer",
+        clientCategory: "dealer",
+        tags: "Dealer, Regional",
+        creditLimit: "150000",
+        payment_terms_days: "15",
+        notes: "",
+      });
+    } catch (err: any) {
+      setFormError(err.message || "Failed to create client");
+    }
+  };
+
+  const handleAddInteraction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient || !interactionForm.text) return;
+
+    const newInt = dataService.addInteraction(selectedClient.id, {
+      type: interactionForm.type,
+      text: interactionForm.text,
+      createdBy: "Ayush Rajput (Owner)",
+    });
+
+    setInteractions([newInt, ...interactions]);
+    setInteractionForm({ type: "call", text: "" });
+    showToast("✓ Interaction logged on timeline.");
+  };
+
+  const handleCreateFollowUp = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient || !followUpForm.reason) return;
+
+    dataService.createFollowUp(selectedClient.id, {
+      dueDate: followUpForm.dueDate,
+      reason: followUpForm.reason,
+    });
+
+    setDueFollowUps(dataService.listDueFollowUps(today));
+    setFollowUpForm({ dueDate: today, reason: "" });
+    showToast("✓ Follow-up task scheduled.");
+  };
+
+  const handleCompleteFollowUp = (id: string) => {
+    dataService.completeFollowUp(id);
+    setDueFollowUps(dataService.listDueFollowUps(today));
+    showToast("✓ Follow-up task completed!");
+  };
+
+  return (
+    <div className="content-grid">
+      {/* 1. Dashboard KPI Strip */}
+      <div className="metric-grid">
+        <div
+          className={`metric-card ${filterCard === "all" ? "active-card" : ""}`}
+          style={{ cursor: "pointer" }}
+          onClick={() => setFilterCard("all")}
+        >
+          <div className="metric-icon-box teal">
+            <Users size={22} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Total Clients</span>
+            <div className="metric-value">{totalClients}</div>
+            <span className="metric-sub">Master Directory</span>
+          </div>
+        </div>
+
+        <div
+          className={`metric-card ${filterCard === "active" ? "active-card" : ""}`}
+          style={{ cursor: "pointer" }}
+          onClick={() => setFilterCard("active")}
+        >
+          <div className="metric-icon-box green">
+            <CheckCircle size={22} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Active Buyers</span>
+            <div className="metric-value">{activeCount}</div>
+            <span className="metric-sub">Ordered in &lt; 30 Days</span>
+          </div>
+        </div>
+
+        <div
+          className={`metric-card ${filterCard === "dormant" ? "active-card" : ""}`}
+          style={{ cursor: "pointer" }}
+          onClick={() => setFilterCard("dormant")}
+        >
+          <div className="metric-icon-box amber">
+            <AlertTriangle size={22} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Dormant Clients</span>
+            <div className="metric-value">{dormantCount}</div>
+            <span className="metric-sub">No Order in 30+ Days</span>
+          </div>
+        </div>
+
+        <div
+          className="metric-card"
+          style={{ cursor: "pointer" }}
+          onClick={() => setFilterCard("all")}
+        >
+          <div className="metric-icon-box purple">
+            <IndianRupee size={22} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Total Outstanding</span>
+            <div className="metric-value">{rupee.format(totalOutstanding)}</div>
+            <span className="metric-sub">Net Receivables</span>
+          </div>
+        </div>
+
+        <div
+          className={`metric-card ${filterCard === "overdue60" ? "active-card" : ""}`}
+          style={{ cursor: "pointer" }}
+          onClick={() => setFilterCard("overdue60")}
+        >
+          <div className="metric-icon-box rose">
+            <Clock size={22} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Overdue 60+ Days</span>
+            <div className="metric-value">{rupee.format(overdue60Amount)}</div>
+            <span className="metric-sub">High Collection Risk</span>
+          </div>
+        </div>
+
+        <div
+          className={`metric-card ${filterCard === "dueToday" ? "active-card" : ""}`}
+          style={{ cursor: "pointer" }}
+          onClick={() => setFilterCard("dueToday")}
+        >
+          <div className="metric-icon-box cyan">
+            <MessageCircle size={22} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Today's Calls / Tasks</span>
+            <div className="metric-value">{callsDueCount}</div>
+            <span className="metric-sub">Action Items Pending</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Today's Calls & Follow-up Panel */}
+      <div className="panel wide">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Today's Call List & Pending Follow-ups ({dueFollowUps.length})</h3>
+            <p>Priority call tasks, dormant re-engagement & payment recovery follow-ups</p>
+          </div>
+        </div>
+
+        {dueFollowUps.length === 0 ? (
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", padding: "0.5rem 0" }}>
+            ✓ No pending call tasks due today. All follow-ups are up to date!
+          </p>
+        ) : (
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Target Client</th>
+                  <th>Contact Phone</th>
+                  <th>Follow-up Reason / Task</th>
+                  <th>Due Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dueFollowUps.map((task) => {
+                  const client = clientBalances.find((c) => c.id === task.clientId);
+                  return (
+                    <tr key={task.id}>
+                      <td>
+                        <strong>{client?.name || "Client"}</strong>
+                        <br />
+                        <small>{client?.city}</small>
+                      </td>
+                      <td>{client?.phone}</td>
+                      <td>
+                        <span>{task.reason}</span>
+                        {task.autoSuggested && <span className="badge badge-warning" style={{ marginLeft: "0.5rem" }}>Auto-Suggested</span>}
+                      </td>
+                      <td>
+                        <span className="badge badge-danger">{task.dueDate}</span>
+                      </td>
+                      <td>
+                        {!isReadOnly && (
+                          <button
+                            className="btn-primary btn-sm"
+                            onClick={() => handleCompleteFollowUp(task.id)}
+                            type="button"
+                          >
+                            <CheckCircle size={14} /> Mark Completed
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Main CRM Client Directory Panel */}
+      <div className="panel wide">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Client Directory & Receivables ({filteredClients.length} Clients)</h3>
+            <p>Filter by status, search contacts and inspect FIFO aging buckets</p>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {!isReadOnly && (
+              <button className="btn-primary" onClick={() => setShowAddModal(true)} type="button">
+                <Plus size={18} /> Add New Client
+              </button>
+            )}
+            <button className="btn-outline" onClick={() => setView("billing")} type="button">
+              <ReceiptText size={18} /> New GST Invoice
+            </button>
+          </div>
+        </div>
+
+        {/* Search & Filters Controls */}
+        <div style={{ display: "flex", gap: "1rem", marginBottom: "1.25rem", flexWrap: "wrap", alignItems: "center" }}>
+          <div className="form-group" style={{ flex: 1, minWidth: "240px", margin: 0 }}>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Search by client name, phone, city, or tag..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group" style={{ minWidth: "160px", margin: 0 }}>
+            <select
+              className="form-control"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="all">Category: All</option>
+              <option value="dealer">Dealer</option>
+              <option value="retailer">Retailer</option>
+              <option value="direct">Direct</option>
+            </select>
+          </div>
+
+          {filterCard !== "all" && (
+            <button className="btn-outline btn-sm" onClick={() => setFilterCard("all")} type="button">
+              Clear Card Filter ({filterCard.toUpperCase()})
+            </button>
+          )}
+        </div>
+
+        {/* Client Directory Table */}
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Client Name & Category</th>
+                <th>Phone & WhatsApp</th>
+                <th>City & GSTIN</th>
+                <th>Status</th>
+                <th>Credit Limit</th>
+                <th>Balance Due</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredClients.map((client) => (
+                <tr
+                  key={client.id}
+                  style={{
+                    cursor: "pointer",
+                    background: client.id === selectedClient?.id ? "var(--primary-light)" : undefined,
+                  }}
+                  onClick={() => setSelectedClientId(client.id)}
+                >
+                  <td>
+                    <strong>{client.name}</strong>
+                    <br />
+                    <span className="badge badge-teal" style={{ textTransform: "capitalize" }}>
+                      {client.clientCategory || "dealer"}
+                    </span>
+                    {client.tags?.map((t: string) => (
+                      <span key={t} className="badge badge-purple" style={{ marginLeft: "0.25rem" }}>
+                        {t}
+                      </span>
+                    ))}
+                  </td>
+                  <td>
+                    {client.phone}
+                    <br />
+                    <a
+                      href={`https://wa.me/${client.whatsapp || client.phone}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: "0.76rem", color: "var(--primary)", fontWeight: 700, textDecoration: "none" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      WhatsApp Direct
+                    </a>
+                  </td>
+                  <td>
+                    {client.city}
+                    <br />
+                    <code>{client.gstin || "URP (Unregistered)"}</code>
+                  </td>
+                  <td>
+                    <span
+                      className={`badge badge-${
+                        client.computedStatus === "active"
+                          ? "success"
+                          : client.computedStatus === "dormant"
+                          ? "warning"
+                          : client.computedStatus === "blocked"
+                          ? "danger"
+                          : "info"
+                      }`}
+                    >
+                      {client.computedStatus.toUpperCase()}
+                    </span>
+                  </td>
+                  <td>{rupee.format(client.creditLimit)}</td>
+                  <td>
+                    <strong style={{ color: client.balance > 0 ? "var(--danger)" : "var(--success)" }}>
+                      {rupee.format(client.balance)}
+                    </strong>
+                    {client.isOverCredit && (
+                      <div>
+                        <span className="badge badge-danger">
+                          Exceeds Limit by {rupee.format(client.balance - client.creditLimit)}
+                        </span>
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      {client.balance > 0 && (
+                        <a
+                          className="btn-whatsapp"
+                          href={`https://wa.me/${client.phone}?text=${encodeURIComponent(
+                            `Dear ${client.name}, gentle payment reminder from Rajput Plastics. Outstanding balance of ${rupee.format(
+                              client.balance
+                            )} is pending. Payment Terms: ${client.creditPeriodDays} days. Please settle at your earliest.`
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MessageCircle size={14} /> Send Reminder
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 4. Selected Client Profile & Interaction Timeline Drawer */}
+      {selectedClient && (
+        <div className="grid-2">
+          {/* Client CRM Details & FIFO Aging */}
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <h3>CRM Profile: {selectedClient.name}</h3>
+                <p>Receivables aging, payment terms and credit profile</p>
+              </div>
+              <span className={`badge badge-${selectedClient.computedStatus === "active" ? "success" : "warning"}`}>
+                {selectedClient.computedStatus.toUpperCase()}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.25rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--card-border)", paddingBottom: "0.4rem" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Payment Terms:</span>
+                <strong>{selectedClient.creditPeriodDays} Days</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--card-border)", paddingBottom: "0.4rem" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Credit Limit:</span>
+                <strong>{rupee.format(selectedClient.creditLimit)}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--card-border)", paddingBottom: "0.4rem" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Current Balance Due:</span>
+                <strong style={{ color: selectedClient.balance > 0 ? "var(--danger)" : "var(--success)" }}>
+                  {rupee.format(selectedClient.balance)}
+                </strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--card-border)", paddingBottom: "0.4rem" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Last Order Date:</span>
+                <strong>{selectedClient.lastOrderDate || "No Orders Yet"}</strong>
+              </div>
+            </div>
+
+            {/* FIFO Aging Breakdown */}
+            <div style={{ background: "#f8fafc", padding: "1rem", borderRadius: "var(--radius-md)", border: "1px solid var(--card-border)", marginBottom: "1.25rem" }}>
+              <h4 style={{ fontSize: "0.88rem", fontWeight: 700, marginBottom: "0.75rem" }}>FIFO Receivables Aging Breakdown</h4>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.5rem", textAlign: "center" }}>
+                <div style={{ background: "#ffffff", padding: "0.5rem", borderRadius: "var(--radius-sm)", border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 700 }}>0-30 DAYS</div>
+                  <strong style={{ fontSize: "0.9rem" }}>{rupee.format(selectedClient.aging.bucket0_30)}</strong>
+                </div>
+                <div style={{ background: "#ffffff", padding: "0.5rem", borderRadius: "var(--radius-sm)", border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: "0.68rem", color: "var(--warning)", fontWeight: 700 }}>31-60 DAYS</div>
+                  <strong style={{ fontSize: "0.9rem", color: "var(--warning)" }}>{rupee.format(selectedClient.aging.bucket31_60)}</strong>
+                </div>
+                <div style={{ background: "#ffffff", padding: "0.5rem", borderRadius: "var(--radius-sm)", border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: "0.68rem", color: "var(--danger)", fontWeight: 700 }}>61-90 DAYS</div>
+                  <strong style={{ fontSize: "0.9rem", color: "var(--danger)" }}>{rupee.format(selectedClient.aging.bucket61_90)}</strong>
+                </div>
+                <div style={{ background: "#ffffff", padding: "0.5rem", borderRadius: "var(--radius-sm)", border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: "0.68rem", color: "#991b1b", fontWeight: 700 }}>90+ DAYS</div>
+                  <strong style={{ fontSize: "0.9rem", color: "#991b1b" }}>{rupee.format(selectedClient.aging.bucket90Plus)}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Schedule Follow-up Form */}
+            {!isReadOnly && (
+              <form onSubmit={handleCreateFollowUp} className="form-panel" style={{ marginTop: "1rem" }}>
+                <h4 style={{ fontSize: "0.88rem", fontWeight: 700 }}>Schedule Next Follow-Up Task</h4>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>Due Date *</label>
+                    <input
+                      type="date"
+                      required
+                      className="form-control"
+                      value={followUpForm.dueDate}
+                      onChange={(e) => setFollowUpForm({ ...followUpForm, dueDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Task Reason / Purpose *</label>
+                    <input
+                      type="text"
+                      required
+                      className="form-control"
+                      placeholder="e.g. Call for payment release"
+                      value={followUpForm.reason}
+                      onChange={(e) => setFollowUpForm({ ...followUpForm, reason: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <button type="submit" className="btn-outline btn-sm" style={{ alignSelf: "flex-end" }}>
+                  <Clock size={14} /> Schedule Task
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* Interaction Timeline Log */}
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <h3>Interaction History ({interactions.length})</h3>
+                <p>Newest-first conversation notes, calls & visit records</p>
+              </div>
+            </div>
+
+            {/* Inline Add Interaction Form */}
+            {!isReadOnly && (
+              <form onSubmit={handleAddInteraction} className="form-panel" style={{ marginBottom: "1.25rem" }}>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <select
+                    className="form-control"
+                    style={{ width: "120px" }}
+                    value={interactionForm.type}
+                    onChange={(e) => setInteractionForm({ ...interactionForm, type: e.target.value as InteractionType })}
+                  >
+                    <option value="call">Call</option>
+                    <option value="visit">Visit</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="note">Note</option>
+                  </select>
+                  <input
+                    type="text"
+                    required
+                    className="form-control"
+                    placeholder="Log client call details or discussion summary..."
+                    value={interactionForm.text}
+                    onChange={(e) => setInteractionForm({ ...interactionForm, text: e.target.value })}
+                  />
+                  <button type="submit" className="btn-primary btn-sm">
+                    <Send size={14} /> Log
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Timeline */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "360px", overflowY: "auto" }}>
+              {interactions.length === 0 ? (
+                <p style={{ color: "var(--text-muted)", fontSize: "0.82rem", textAlign: "center", padding: "1.5rem" }}>
+                  No interaction records logged for this client yet.
+                </p>
+              ) : (
+                interactions.map((int) => (
+                  <div key={int.id} className="notice-item" style={{ margin: 0 }}>
+                    <div className="notice-meta">
+                      <span className="badge badge-teal" style={{ textTransform: "uppercase" }}>
+                        {int.type}
+                      </span>
+                      <span>{new Date(int.timestamp).toLocaleString()}</span>
+                    </div>
+                    <p style={{ margin: "0.25rem 0 0", color: "var(--text-main)", fontWeight: 500 }}>{int.text}</p>
+                    <small style={{ color: "var(--text-muted)" }}>Logged by: {int.createdBy}</small>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Add New Client Modal */}
+      {showAddModal && (
+        <div className="panel wide" style={{ border: "2px solid var(--primary)", marginTop: "1.5rem" }}>
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Create New Client / Customer Master</h3>
+              <p>Register dealer, shopkeeper or direct buyer profile with credit terms</p>
+            </div>
+            <button className="btn-outline btn-sm" onClick={() => setShowAddModal(false)} type="button">
+              Cancel
+            </button>
+          </div>
+
+          {formError && (
+            <div className="toast-badge" style={{ background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", marginBottom: "1rem" }}>
+              <AlertTriangle size={16} />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleAddClient} className="form-panel">
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Client Name *</label>
+                <input
+                  type="text"
+                  required
+                  className="form-control"
+                  placeholder="e.g. Rajasthan Traders & Co"
+                  value={clientForm.name}
+                  onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Phone Number (10 Digits) *</label>
+                <input
+                  type="text"
+                  required
+                  className="form-control"
+                  placeholder="e.g. 9829012345"
+                  value={clientForm.phone}
+                  onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>WhatsApp Number</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. 9829012345"
+                  value={clientForm.whatsapp}
+                  onChange={(e) => setClientForm({ ...clientForm, whatsapp: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label>City *</label>
+                <input
+                  type="text"
+                  required
+                  className="form-control"
+                  placeholder="e.g. Jaipur"
+                  value={clientForm.city}
+                  onChange={(e) => setClientForm({ ...clientForm, city: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>GSTIN (15-Char Format, Optional)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. 08AABCJ1020A1Z5"
+                  value={clientForm.gstin}
+                  onChange={(e) => setClientForm({ ...clientForm, gstin: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Client Category *</label>
+                <select
+                  className="form-control"
+                  value={clientForm.clientCategory}
+                  onChange={(e) => setClientForm({ ...clientForm, clientCategory: e.target.value as ClientCategory })}
+                >
+                  <option value="dealer">Dealer (Wholesale)</option>
+                  <option value="retailer">Retailer (Shopkeeper)</option>
+                  <option value="direct">Direct Industrial Buyer</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Credit Limit Amount (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="form-control"
+                  value={clientForm.creditLimit}
+                  onChange={(e) => setClientForm({ ...clientForm, creditLimit: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Payment Terms (Days)</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="form-control"
+                  value={clientForm.payment_terms_days}
+                  onChange={(e) => setClientForm({ ...clientForm, payment_terms_days: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Tags (Comma Separated)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. VIP, High Volume"
+                  value={clientForm.tags}
+                  onChange={(e) => setClientForm({ ...clientForm, tags: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Special Instructions / Client Notes</label>
+              <textarea
+                className="form-control"
+                rows={2}
+                placeholder="Enter client delivery preferences or special payment arrangements..."
+                value={clientForm.notes}
+                onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+              <button type="button" className="btn-outline" onClick={() => setShowAddModal(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary">
+                <Plus size={18} /> Register Client Profile
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   7. DISPATCH VIEW
+========================================================================= */
+function DispatchView({
+  dispatches,
+  orders,
+  parties,
+  onCreateDispatch,
+  onUpdateStatus,
+}: {
+  dispatches: Dispatch[];
+  orders: Order[];
+  parties: Party[];
+  onCreateDispatch: (form: any) => void;
+  onUpdateStatus: (id: string, status: any) => void;
+}) {
+  const openOrders = orders.filter((o) => o.status !== "delivered");
+  const [form, setForm] = useState({
+    orderId: openOrders[0]?.id ?? "",
+    transportProvider: "Porter Express Logistics",
+    trackingId: "",
+    vehicleType: "Tata 407 (14 Ft Open)",
+    cost: "1200",
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.orderId || !form.transportProvider || !form.trackingId) return;
+
+    onCreateDispatch({
+      orderId: form.orderId,
+      transportProvider: form.transportProvider,
+      trackingId: form.trackingId,
+      vehicleType: form.vehicleType,
+      cost: Number(form.cost || 0),
+    });
+
+    setForm({
+      orderId: openOrders[0]?.id ?? "",
+      transportProvider: "Porter Express Logistics",
+      trackingId: "",
+      vehicleType: "Tata 407 (14 Ft Open)",
+      cost: "1200",
+    });
+  };
+
+  return (
+    <div className="content-grid">
+      <div className="grid-2">
+        {/* Create Dispatch Form */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Create Vehicle Dispatch</h3>
+              <p>Assign transport provider and vehicle tracking to client order</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="form-panel">
+            <div className="form-group">
+              <label>Select Ready Order *</label>
+              <select
+                className="form-control"
+                value={form.orderId}
+                onChange={(e) => setForm({ ...form, orderId: e.target.value })}
+              >
+                {openOrders.length === 0 ? (
+                  <option value="">No pending orders ready for dispatch</option>
+                ) : (
+                  openOrders.map((o) => {
+                    const party = parties.find((p) => p.id === o.partyId);
+                    return (
+                      <option key={o.id} value={o.id}>
+                        {o.orderNumber} · {party?.name} ({o.status})
+                      </option>
+                    );
+                  })
+                )}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Transporter Name *</label>
+              <input
+                type="text"
+                required
+                className="form-control"
+                placeholder="e.g. Porter Logistics / VRL / Own Fleet"
+                value={form.transportProvider}
+                onChange={(e) => setForm({ ...form, transportProvider: e.target.value })}
+              />
+            </div>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Vehicle / Tracking # *</label>
+                <input
+                  type="text"
+                  required
+                  className="form-control"
+                  placeholder="e.g. RJ-14-GA-8821"
+                  value={form.trackingId}
+                  onChange={(e) => setForm({ ...form, trackingId: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Vehicle Type</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Pickup, Tata Ace, Truck"
+                  value={form.vehicleType}
+                  onChange={(e) => setForm({ ...form, vehicleType: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Freight / Transport Cost (₹)</label>
+              <input
+                type="number"
+                min="0"
+                className="form-control"
+                value={form.cost}
+                onChange={(e) => setForm({ ...form, cost: e.target.value })}
+              />
+            </div>
+
+            <button type="submit" className="btn-primary" disabled={!form.orderId} style={{ width: "100%", justifyContent: "center" }}>
+              <Truck size={18} /> Confirm Dispatch
+            </button>
+          </form>
+        </div>
+
+        {/* Active Shipments Register */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Live Shipments Tracker</h3>
+              <p>Update delivery pipeline status</p>
+            </div>
+          </div>
+
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order / Client</th>
+                  <th>Tracking #</th>
+                  <th>Cost</th>
+                  <th>Status</th>
+                  <th>Update</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dispatches.map((d) => (
+                  <tr key={d.id}>
+                    <td>
+                      <strong>{d.partyName}</strong>
+                      <br />
+                      <small>{d.orderNumber}</small>
+                    </td>
+                    <td><code>{d.trackingId}</code></td>
+                    <td>{rupee.format(d.cost)}</td>
+                    <td>
+                      <span className={`badge badge-${d.status === "delivered" ? "success" : d.status === "in_transit" ? "warning" : "info"}`}>
+                        {d.status.replace("_", " ").toUpperCase()}
+                      </span>
+                    </td>
+                    <td>
+                      {d.status === "dispatched" && (
+                        <button className="btn-outline btn-sm" onClick={() => onUpdateStatus(d.id, "in_transit")}>
+                          Mark In-Transit
+                        </button>
+                      )}
+                      {d.status === "in_transit" && (
+                        <button className="btn-primary btn-sm" onClick={() => onUpdateStatus(d.id, "delivered")}>
+                          Mark Delivered
+                        </button>
+                      )}
+                      {d.status === "delivered" && <span>✓ Delivered</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   8. REPORTS & ANALYTICS VIEW
+========================================================================= */
+function ReportsView({
+  entries,
+  products,
+  materials,
+  boms,
+  onExport,
+}: {
+  entries: ProductionEntry[];
+  products: Product[];
+  materials: Material[];
+  boms: Bom[];
+  onExport: () => void;
+}) {
+  const consumptionMap = useMemo(() => {
+    const map = new Map<string, number>();
+    entries.forEach((e) => {
+      const bom = boms.find((b) => b.id === e.bomId);
+      bom?.lineItems.forEach((line) => {
+        map.set(line.materialId, (map.get(line.materialId) ?? 0) + line.qtyPerUnit * e.quantityProduced);
+      });
+    });
+    return map;
+  }, [boms, entries]);
+
+  return (
+    <div className="content-grid">
+      <div className="panel wide">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Production Audit Summary ({entries.length} Total Runs)</h3>
+            <p>Historical production entries and machine downtime logs</p>
+          </div>
+          <button className="btn-primary" onClick={onExport}>
+            <Download size={18} /> Export Production CSV
+          </button>
+        </div>
+
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Product</th>
+                <th>Output Qty</th>
+                <th>Rejected</th>
+                <th>Shift</th>
+                <th>Machine</th>
+                <th>Downtime</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => {
+                const prod = products.find((p) => p.id === e.productId);
+                return (
+                  <tr key={e.id}>
+                    <td>{e.entryDate}</td>
+                    <td><strong>{prod?.name}</strong></td>
+                    <td><strong style={{ color: "var(--success)" }}>{e.quantityProduced} {prod?.unit}</strong></td>
+                    <td>{e.quantityRejected > 0 ? <span className="badge badge-danger">{e.quantityRejected}</span> : "-"}</td>
+                    <td>{e.shift}</td>
+                    <td><small>{e.machineId}</small></td>
+                    <td>{e.downtimeMinutes > 0 ? `${e.downtimeMinutes}m` : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel wide">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Cumulative Raw Material Consumption</h3>
+            <p>Total raw materials utilized in production batches</p>
+          </div>
+        </div>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Material Code</th>
+                <th>Material Name</th>
+                <th>Category</th>
+                <th>Consumed Quantity</th>
+                <th>Current Stock Remaining</th>
+              </tr>
+            </thead>
+            <tbody>
+              {materials.map((m) => {
+                const consumed = consumptionMap.get(m.id) ?? 0;
+                return (
+                  <tr key={m.id}>
+                    <td><code>{m.code}</code></td>
+                    <td><strong>{m.name}</strong></td>
+                    <td><span className="badge badge-purple">{m.category}</span></td>
+                    <td><strong style={{ color: "var(--primary)" }}>{consumed.toFixed(2)} {m.unit}</strong></td>
+                    <td>{m.currentStock} {m.unit}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   9. NOTICES & BULLETINS VIEW
+========================================================================= */
+function NoticesView({
+  notices,
+  onAddNotice,
+}: {
+  notices: PlantNotice[];
+  onAddNotice: (n: PlantNotice) => void;
+}) {
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [form, setForm] = useState({
+    title: "",
+    content: "",
+    targetShift: "All Shifts" as PlantNotice["targetShift"],
+    priority: "High" as PlantNotice["priority"],
+    issuedBy: "Plant Operations Manager",
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title || !form.content) return;
+
+    onAddNotice({
+      id: createId("not"),
+      title: form.title,
+      content: form.content,
+      targetShift: form.targetShift,
+      priority: form.priority,
+      date: today,
+      issuedBy: form.issuedBy,
+    });
+
+    setShowModal(false);
+    setForm({
+      title: "",
+      content: "",
+      targetShift: "All Shifts",
+      priority: "High",
+      issuedBy: "Plant Operations Manager",
+    });
+  };
+
+  return (
+    <>
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Plant Bulletins & Shift Handover Notices</h3>
+            <p>Maintenance, quality and shift announcements across all lines</p>
+          </div>
+          <button className="btn-primary" onClick={() => setShowModal(!showModal)}>
+            <Plus size={18} /> Broadcast New Bulletin
+          </button>
+        </div>
+
+        <div>
+          {notices.map((n) => (
+            <div key={n.id} className={`notice-item ${n.priority.toLowerCase()}`} style={{ padding: "1.25rem" }}>
+              <div className="notice-meta" style={{ marginBottom: "0.4rem" }}>
+                <span><strong>{n.issuedBy}</strong> · Target: <span className="badge badge-teal">{n.targetShift}</span></span>
+                <span>{n.date} · <span className={`badge badge-${n.priority === "Urgent" ? "danger" : "warning"}`}>{n.priority} Priority</span></span>
+              </div>
+              <h3 style={{ fontSize: "1.1rem", marginBottom: "0.35rem" }}>{n.title}</h3>
+              <p style={{ fontSize: "0.88rem", lineHeight: "1.5" }}>{n.content}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {showModal && (
+        <div className="panel" style={{ border: "2px solid var(--primary)", marginTop: "1.5rem" }}>
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>Broadcast New Plant Bulletin</h3>
+              <p>Publish an announcement to operators, maintenance, or shift teams</p>
+            </div>
+            <button className="btn-outline btn-sm" onClick={() => setShowModal(false)}>Close</button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="form-grid">
+            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+              <label>Bulletin Title *</label>
+              <input
+                type="text"
+                required
+                className="form-control"
+                placeholder="e.g. Preventative Maintenance Scheduled for Line 1"
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Target Audience / Shift</label>
+              <select
+                className="form-control"
+                value={form.targetShift}
+                onChange={(e) => setForm({ ...form, targetShift: e.target.value as any })}
+              >
+                <option value="All Shifts">All Shifts (Plant Wide)</option>
+                <option value="Morning Shift">Morning Shift Only</option>
+                <option value="Maintenance Team">Maintenance Engineers</option>
+                <option value="Quality Dept">Quality Assurance Dept</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Priority Level</label>
+              <select
+                className="form-control"
+                value={form.priority}
+                onChange={(e) => setForm({ ...form, priority: e.target.value as any })}
+              >
+                <option value="Urgent">Urgent (Plant Action Required)</option>
+                <option value="High">High Priority</option>
+                <option value="Normal">Normal Information</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+              <label>Bulletin Content *</label>
+              <textarea
+                required
+                rows={4}
+                className="form-control"
+                placeholder="Write detailed bulletin instructions here..."
+                value={form.content}
+                onChange={(e) => setForm({ ...form, content: e.target.value })}
+              />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: "1rem" }}>
+              <button type="button" className="btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
+              <button type="submit" className="btn-primary"><Send size={18} /> Broadcast Bulletin</button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* =========================================================================
+   10. SETUP & BOM BUILDER VIEW (OWNER ONLY)
+========================================================================= */
+function SetupView({
+  products,
+  materials,
+  boms,
+  onProductCreated,
+  onMaterialCreated,
+  onBomSaved,
+  showToast,
+}: {
+  products: Product[];
+  materials: Material[];
+  boms: Bom[];
+  onProductCreated: (p: Product) => void;
+  onMaterialCreated: (m: Material) => void;
+  onBomSaved: (b: Bom) => void;
+  showToast: (msg: string) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"products" | "materials" | "bom">("products");
+  const [editingProductId, setEditingProductId] = useState<string>(products[0]?.id ?? "");
+
+  // Form states for Add Product
+  const [productForm, setProductForm] = useState({
+    name: "",
+    unit: "pcs",
+    daily_target: "",
+    sellingPrice: "",
+  });
+
+  // Form states for Add Material
+  const [materialForm, setMaterialForm] = useState({
+    name: "",
+    unit: "kg",
+    low_stock_threshold: "50",
+    current_stock: "100",
+    unitCost: "",
+  });
+
+  // BOM Builder State
+  const activeBomForProduct = useMemo(
+    () => boms.find((b) => b.productId === editingProductId && b.isActive),
+    [boms, editingProductId]
+  );
+
+  const [bomLines, setBomLines] = useState<BomLineItem[]>(() => activeBomForProduct?.lineItems || []);
+
+  // Sync bomLines when editingProductId changes
+  const handleSelectProductForBom = (productId: string) => {
+    setEditingProductId(productId);
+    const active = boms.find((b) => b.productId === productId && b.isActive);
+    setBomLines(active?.lineItems ? [...active.lineItems] : []);
+    setActiveTab("bom");
+  };
+
+  // Create Product handler
+  const handleAddProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productForm.name || !productForm.unit) return;
+
+    const newProd = dataService.createProduct({
+      name: productForm.name,
+      unit: productForm.unit,
+      daily_target: Number(productForm.daily_target || 0),
+      sellingPrice: Number(productForm.sellingPrice || 0),
+    });
+
+    onProductCreated(newProd);
+    showToast(`✓ Added Product "${newProd.name}". You can now build its BOM.`);
+    setProductForm({ name: "", unit: "pcs", daily_target: "", sellingPrice: "" });
+  };
+
+  // Create Material handler
+  const handleAddMaterial = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!materialForm.name || !materialForm.unit) return;
+
+    const newMat = dataService.createMaterial({
+      name: materialForm.name,
+      unit: materialForm.unit,
+      low_stock_threshold: Number(materialForm.low_stock_threshold || 0),
+      current_stock: Number(materialForm.current_stock || 0),
+      unitCost: Number(materialForm.unitCost || 0),
+    });
+
+    onMaterialCreated(newMat);
+    showToast(`✓ Added Material "${newMat.name}" with starting stock ${newMat.currentStock} ${newMat.unit}.`);
+    setMaterialForm({ name: "", unit: "kg", low_stock_threshold: "50", current_stock: "100", unitCost: "" });
+  };
+
+  // Add line to BOM Builder
+  const handleAddBomLine = () => {
+    const firstMat = materials[0];
+    if (!firstMat) {
+      showToast("Create raw materials first before adding to BOM!");
+      return;
+    }
+    setBomLines([...bomLines, { materialId: firstMat.id, qtyPerUnit: 1 }]);
+  };
+
+  // Remove line from BOM Builder
+  const handleRemoveBomLine = (index: number) => {
+    setBomLines(bomLines.filter((_, idx) => idx !== index));
+  };
+
+  // Save new BOM version
+  const handleSaveBom = () => {
+    if (!editingProductId) {
+      showToast("Select a product to save BOM.");
+      return;
+    }
+
+    const validLines = bomLines.filter((line) => line.materialId && line.qtyPerUnit > 0);
+    const newBom = dataService.saveBom(editingProductId, validLines);
+
+    onBomSaved(newBom);
+    const prod = products.find((p) => p.id === editingProductId);
+    showToast(`✓ Created BOM v${newBom.version} for ${prod?.name || "Product"}. Previous versions preserved.`);
+  };
+
+  const selectedProduct = products.find((p) => p.id === editingProductId);
+
+  return (
+    <div className="content-grid">
+      {/* Sub Tabs */}
+      <div className="panel wide">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Owner Master Setup Portal</h3>
+            <p>Define product catalog, raw materials & immutable BOM recipe versions</p>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              className={activeTab === "products" ? "btn-primary" : "btn-outline"}
+              onClick={() => setActiveTab("products")}
+              type="button"
+            >
+              Products Catalog ({products.length})
+            </button>
+            <button
+              className={activeTab === "materials" ? "btn-primary" : "btn-outline"}
+              onClick={() => setActiveTab("materials")}
+              type="button"
+            >
+              Raw Materials ({materials.length})
+            </button>
+            <button
+              className={activeTab === "bom" ? "btn-primary" : "btn-outline"}
+              onClick={() => setActiveTab("bom")}
+              type="button"
+            >
+              BOM Builder Engine
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* PRODUCTS TAB */}
+      {activeTab === "products" && (
+        <div className="grid-2">
+          {/* Add Product Form */}
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <h3>Add New Product</h3>
+                <p>Register a manufactured item into master catalog</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleAddProduct} className="form-panel">
+              <div className="form-group">
+                <label>Product Name *</label>
+                <input
+                  type="text"
+                  required
+                  className="form-control"
+                  placeholder="e.g. 500ml Plastic Water Container"
+                  value={productForm.name}
+                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                />
+              </div>
+
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Unit of Measure *</label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control"
+                    placeholder="pcs, boxes, sets, kg"
+                    value={productForm.unit}
+                    onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Daily Production Target (optional)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-control"
+                    placeholder="e.g. 500"
+                    value={productForm.daily_target}
+                    onChange={(e) => setProductForm({ ...productForm, daily_target: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Selling Price per Unit (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="form-control"
+                  placeholder="e.g. 350"
+                  value={productForm.sellingPrice}
+                  onChange={(e) => setProductForm({ ...productForm, sellingPrice: e.target.value })}
+                />
+              </div>
+
+              <button type="submit" className="btn-primary" style={{ justifyContent: "center", marginTop: "0.5rem" }}>
+                <Plus size={18} /> Add Product to Catalog
+              </button>
+            </form>
+          </div>
+
+          {/* Product Directory */}
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <h3>Product Directory</h3>
+                <p>Existing products and their active BOM versions</p>
+              </div>
+            </div>
+
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Product Name</th>
+                    <th>Unit</th>
+                    <th>Daily Target</th>
+                    <th>Active BOM</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {products.map((p) => {
+                    const activeBom = boms.find((b) => b.productId === p.id && b.isActive);
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <strong>{p.name}</strong>
+                          <br />
+                          <small>{p.code}</small>
+                        </td>
+                        <td>{p.unit}</td>
+                        <td>{p.dailyTarget > 0 ? `${p.dailyTarget} ${p.unit}` : "-"}</td>
+                        <td>
+                          {activeBom ? (
+                            <span className="badge badge-success">BOM v{activeBom.version}</span>
+                          ) : (
+                            <span className="badge badge-warning">No Active BOM</span>
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            className="btn-outline btn-sm"
+                            onClick={() => handleSelectProductForBom(p.id)}
+                            type="button"
+                          >
+                            <Layers3 size={14} /> Edit BOM
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MATERIALS TAB */}
+      {activeTab === "materials" && (
+        <div className="grid-2">
+          {/* Add Material Form */}
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <h3>Add New Raw Material</h3>
+                <p>Register raw materials, color additives or packaging stock</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleAddMaterial} className="form-panel">
+              <div className="form-group">
+                <label>Material Name *</label>
+                <input
+                  type="text"
+                  required
+                  className="form-control"
+                  placeholder="e.g. HDPE Resin Granules Grade 5502"
+                  value={materialForm.name}
+                  onChange={(e) => setMaterialForm({ ...materialForm, name: e.target.value })}
+                />
+              </div>
+
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Unit of Measure *</label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control"
+                    placeholder="kg, pcs, liters, rolls"
+                    value={materialForm.unit}
+                    onChange={(e) => setMaterialForm({ ...materialForm, unit: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Low Stock Alert Threshold *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    className="form-control"
+                    placeholder="e.g. 100"
+                    value={materialForm.low_stock_threshold}
+                    onChange={(e) => setMaterialForm({ ...materialForm, low_stock_threshold: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Starting Current Stock *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    className="form-control"
+                    placeholder="e.g. 500"
+                    value={materialForm.current_stock}
+                    onChange={(e) => setMaterialForm({ ...materialForm, current_stock: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Unit Purchase Cost (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-control"
+                    placeholder="e.g. 120"
+                    value={materialForm.unitCost}
+                    onChange={(e) => setMaterialForm({ ...materialForm, unitCost: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <button type="submit" className="btn-primary" style={{ justifyContent: "center", marginTop: "0.5rem" }}>
+                <Plus size={18} /> Add Material to Inventory
+              </button>
+            </form>
+          </div>
+
+          {/* Material Directory */}
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <h3>Raw Material Inventory Master</h3>
+                <p>Master list of materials and current stock levels</p>
+              </div>
+            </div>
+
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Material Name</th>
+                    <th>Unit</th>
+                    <th>Current Stock</th>
+                    <th>Low Threshold</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {materials.map((m) => {
+                    const isLow = m.currentStock <= m.lowStockThreshold;
+                    return (
+                      <tr key={m.id}>
+                        <td>
+                          <strong>{m.name}</strong>
+                          <br />
+                          <small>{m.code}</small>
+                        </td>
+                        <td>{m.unit}</td>
+                        <td><strong>{m.currentStock} {m.unit}</strong></td>
+                        <td>{m.lowStockThreshold} {m.unit}</td>
+                        <td>
+                          <span className={`badge badge-${isLow ? "danger" : "success"}`}>
+                            {isLow ? "Low Stock" : "Healthy"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BOM BUILDER TAB */}
+      {activeTab === "bom" && (
+        <div className="panel wide">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>BOM Version Builder Engine</h3>
+              <p>Formulate raw material requirements for product pieces. Saves create a new active version and preserve history!</p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <div className="form-group" style={{ flex: 1, minWidth: "260px" }}>
+              <label>Select Product to Build / Edit BOM</label>
+              <select
+                className="form-control"
+                value={editingProductId}
+                onChange={(e) => handleSelectProductForBom(e.target.value)}
+              >
+                {products.map((p) => {
+                  const active = boms.find((b) => b.productId === p.id && b.isActive);
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.code}) — {active ? `Active BOM v${active.version}` : "No Active BOM"}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {selectedProduct && (
+              <div style={{ background: "var(--primary-light)", padding: "0.85rem 1.25rem", borderRadius: "var(--radius-md)", alignSelf: "flex-end" }}>
+                Target Product: <strong>{selectedProduct.name}</strong> | Active Version: <strong>v{activeBomForProduct?.version ?? 0}</strong>
+              </div>
+            )}
+          </div>
+
+          {/* BOM Line Items Editor Table */}
+          <div className="table-container" style={{ marginBottom: "1.25rem" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Raw Material</th>
+                  <th>Required Qty per 1 {selectedProduct?.unit || "Unit"}</th>
+                  <th>Material Unit</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bomLines.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
+                      No raw material line items in this BOM yet. Click <strong>"Add Material Line"</strong> below to start building the formulation.
+                    </td>
+                  </tr>
+                ) : (
+                  bomLines.map((line, idx) => {
+                    const selectedMat = materials.find((m) => m.id === line.materialId);
+
+                    return (
+                      <tr key={idx}>
+                        <td><strong>#{idx + 1}</strong></td>
+                        <td>
+                          <select
+                            className="form-control"
+                            value={line.materialId}
+                            onChange={(e) => {
+                              const updated = [...bomLines];
+                              updated[idx].materialId = e.target.value;
+                              setBomLines(updated);
+                            }}
+                          >
+                            {materials.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} ({m.code}) — Stock: {m.currentStock} {m.unit}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0.001"
+                            className="form-control"
+                            style={{ width: "160px" }}
+                            placeholder="Qty per unit"
+                            value={line.qtyPerUnit}
+                            onChange={(e) => {
+                              const updated = [...bomLines];
+                              updated[idx].qtyPerUnit = Number(e.target.value);
+                              setBomLines(updated);
+                            }}
+                          />
+                        </td>
+                        <td><span className="badge badge-teal">{selectedMat?.unit || "-"}</span></td>
+                        <td>
+                          <button
+                            className="btn-outline btn-sm"
+                            style={{ color: "var(--danger)" }}
+                            onClick={() => handleRemoveBomLine(idx)}
+                            type="button"
+                          >
+                            <Trash2 size={14} /> Remove Line
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button className="btn-outline" onClick={handleAddBomLine} type="button">
+              <Plus size={18} /> Add Material Line
+            </button>
+
+            <button className="btn-primary" onClick={handleSaveBom} type="button" disabled={bomLines.length === 0}>
+              <CheckCircle size={18} /> Save & Activate New BOM Version
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

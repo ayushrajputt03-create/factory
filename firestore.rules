@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isActiveUser() {
+      return isAuthenticated() && request.auth.token.active == true;
+    }
+
+    function isFactoryUser(factoryId) {
+      return isActiveUser() && request.auth.token.factory_id == factoryId;
+    }
+
+    function isOwner(factoryId) {
+      return isFactoryUser(factoryId) && request.auth.token.role == 'owner';
+    }
+
+    function isAccountant(factoryId) {
+      return isFactoryUser(factoryId) && (request.auth.token.role == 'accountant' || request.auth.token.role == 'ca');
+    }
+
+    function isSupervisor(factoryId) {
+      return isFactoryUser(factoryId) && request.auth.token.role == 'supervisor';
+    }
+
+    // Factory collection rules
+    match /factories/{factoryId} {
+
+      // Client / CRM Collection
+      match /clients/{clientId} {
+        // Owner: full access. CA: read-only. Supervisor: NO access.
+        allow read: if isOwner(factoryId) || isAccountant(factoryId);
+        allow create, update, delete: if isOwner(factoryId);
+
+        // Client Timeline Interactions (Append-only)
+        match /interactions/{interactionId} {
+          // Owner: read, create, delete. CA/Supervisor: NO access.
+          allow read: if isOwner(factoryId);
+          allow create: if isOwner(factoryId);
+          allow update, delete: if isOwner(factoryId);
+        }
+
+        // Client Follow-up Tasks
+        match /followups/{followupId} {
+          // Owner: full access. CA/Supervisor: NO access.
+          allow read, write: if isOwner(factoryId);
+        }
+      }
+    }
+  }
+}
