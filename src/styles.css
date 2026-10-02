@@ -339,6 +339,8 @@ code {
 }
 
 .table-container tbody tr { cursor: pointer; }
+.table-container tbody tr:focus-visible, .metric-card:focus-visible, .quick-action-btn:focus-visible, .crm-deal-card:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand-blue) 42%, transparent); outline-offset: 2px; }
+.metric-card[role="button"], .table-container tbody tr[tabindex="0"] { cursor: pointer; }
 .table-container tbody tr:hover { background: var(--surface-muted); }
 .crm-deal-card { width: 100%; border: 1px solid var(--border); background: var(--surface); text-align: left; cursor: pointer; }
 .crm-deal-card:hover { border-color: var(--brand-blue); box-shadow: var(--shadow-sm); }
