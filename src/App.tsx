@@ -981,6 +981,15 @@ function AccountsFinanceView({
   const overdue = invoices.filter((invoice) => invoice.status === "overdue").reduce((total, invoice) => total + invoice.total, 0);
   const totalRevenue = invoices.filter((invoice) => invoice.status === "paid" || invoice.status === "sent").reduce((total, invoice) => total + invoice.total, 0);
   const productionCost = productionEntries.reduce((total, entry) => total + entry.quantityProduced * 18, 0);
+  const cashFlow = [
+    ["May", Math.round(totalRevenue * 0.58), Math.round((productionCost + 126000) * 0.48)],
+    ["Jun", Math.round(totalRevenue * 0.72), Math.round((productionCost + 126000) * 0.62)],
+    ["Jul", Math.round(totalRevenue * 0.51), Math.round((productionCost + 126000) * 0.56)],
+    ["Aug", Math.round(totalRevenue * 0.84), Math.round((productionCost + 126000) * 0.68)],
+    ["Sep", Math.round(totalRevenue * 0.66), Math.round((productionCost + 126000) * 0.74)],
+    ["Oct", totalRevenue, productionCost + 126000],
+  ];
+  const cashFlowMax = Math.max(...cashFlow.map(([, received, paid]) => Math.max(Number(received), Number(paid))), 1);
   const payableEstimate = materials.reduce((total, material) => total + Math.max(0, material.lowStockThreshold - material.currentStock) * material.unitCost, 0) + 185000;
   const filteredInvoices = invoices.filter((invoice) => {
     const party = parties.find((item) => item.id === invoice.partyId);
@@ -1042,8 +1051,8 @@ function AccountsFinanceView({
               </div>
             </section>
             <section className="panel finance-chart-panel">
-              <div className="panel-header"><div className="panel-title"><h3>Monthly cash flow</h3><p>Receipts vs payments · last 6 months</p></div><span className="badge badge-blue">Live ledger</span></div>
-              <div className="cash-bars">{[52, 64, 44, 72, 58, 86].map((height, index) => <div className="cash-bar-column" key={index}><div className="cash-bar" style={{ height: `${height}%` }} /><span>{['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'][index]}</span></div>)}</div>
+              <div className="panel-header"><div className="panel-title"><h3>Monthly cash flow</h3><p>Receipts vs payments · last 6 months</p></div><div className="cash-flow-legend"><span><i className="legend-dot received" /> Receipts</span><span><i className="legend-dot paid" /> Payments</span></div></div>
+              <div className="cash-chart"><div className="cash-axis"><span>{rupee.format(cashFlowMax)}</span><span>{rupee.format(Math.round(cashFlowMax / 2))}</span><span>₹0</span></div><div className="cash-bars">{cashFlow.map(([month, received, paid]) => <div className="cash-bar-column" key={String(month)}><div className="cash-bar-values"><small>{rupee.format(Number(received))}</small><small>{rupee.format(Number(paid))}</small></div><div className="cash-bar-pair"><div className="cash-bar received" style={{ height: `${Math.max(8, Number(received) / cashFlowMax * 100)}%` }} /><div className="cash-bar paid" style={{ height: `${Math.max(8, Number(paid) / cashFlowMax * 100)}%` }} /></div><span>{month}</span></div>)}</div></div>
             </section>
           </div>
 

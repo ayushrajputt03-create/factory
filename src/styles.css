@@ -257,9 +257,19 @@ code {
 .ageing-row strong { color: var(--text-main); }
 .ageing-track { height: 8px; border-radius: 99px; background: #edf1f6; overflow: hidden; }
 .ageing-track span { display: block; height: 100%; border-radius: inherit; }
-.cash-bars { display: flex; align-items: flex-end; justify-content: space-around; height: 145px; padding-top: 1rem; border-bottom: 1px solid var(--card-border); }
-.cash-bar-column { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 0.45rem; color: var(--text-muted); font-size: 0.62rem; }
-.cash-bar { width: 25px; min-height: 12px; border-radius: 5px 5px 0 0; background: linear-gradient(180deg, #6d8cff, #2f5bd3); }
+.cash-flow-legend { display: flex; gap: 12px; color: var(--text-muted); font-size: 11px; }
+.cash-flow-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.legend-dot.received, .cash-bar.received { background: #3564d8; }
+.legend-dot.paid, .cash-bar.paid { background: #f59e0b; }
+.cash-chart { display: grid; grid-template-columns: 50px 1fr; gap: 8px; height: 184px; padding-top: 12px; }
+.cash-axis { display: flex; flex-direction: column; justify-content: space-between; padding-bottom: 23px; color: var(--text-muted); font-size: 10px; text-align: right; }
+.cash-bars { display: flex; align-items: flex-end; justify-content: space-around; height: 100%; border-bottom: 1px solid var(--card-border); }
+.cash-bar-column { height: 100%; min-width: 45px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; color: var(--text-muted); font-size: 10px; }
+.cash-bar-values { display: flex; gap: 4px; opacity: 0; transform: translateY(4px); transition: opacity .15s ease, transform .15s ease; color: var(--text-strong); font-size: 9px; white-space: nowrap; }
+.cash-bar-column:hover .cash-bar-values { opacity: 1; transform: translateY(0); }
+.cash-bar-pair { display: flex; align-items: flex-end; justify-content: center; gap: 3px; width: 100%; height: 135px; }
+.cash-bar { width: 14px; min-height: 8px; border-radius: 4px 4px 0 0; }
 .finance-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.55rem; }
 .finance-actions button { display: flex; align-items: center; gap: 0.5rem; min-height: 42px; padding: 0.5rem; text-align: left; border: 1px solid var(--card-border); border-radius: 8px; background: #fbfcfe; color: var(--text-main); font-size: 0.68rem; font-weight: 700; cursor: pointer; }
 .finance-actions button:hover { border-color: var(--status-blue-border); color: var(--status-blue); background: var(--status-blue-bg); }
