@@ -99,6 +99,7 @@ type View =
   | "bom"
   | "billing"
   | "clients"
+  | "crm"
   | "accounts"
   | "reports"
   | "notices"
@@ -556,6 +557,10 @@ export default function App() {
             <Users size={18} />
             <span>Client CRM & Accounts</span>
           </button>
+          {userRole !== "supervisor" && <button className={`nav-item ${view === "crm" ? "active" : ""}`} onClick={() => setView("crm")}>
+            <Users size={18} />
+            <span>CRM</span>
+          </button>}
           <button className={`nav-item ${view === "billing" ? "active" : ""}`} onClick={() => setView("billing")}>
             <ReceiptText size={18} />
             <span>GST Invoicing</span>
@@ -606,6 +611,7 @@ export default function App() {
                 {view === "bom" && "Bill of Materials (BOM) & Product Recipes"}
                 {view === "billing" && "GST Tax Invoicing & Accounts Portal"}
                 {view === "clients" && "Party Directory & Ledger Balances"}
+                {view === "crm" && "CRM · Sales Pipeline & Customer Growth"}
                 {view === "accounts" && "Accounts & Finance Control Center"}
                 {view === "dispatch" && "Logistics, Shipments & Fleet Tracker"}
                 {view === "reports" && "Operational & Material Consumption Reports"}
@@ -747,6 +753,10 @@ export default function App() {
             />
           )}
 
+          {view === "crm" && (
+            <CrmFoundationView parties={parties} invoices={invoices} userRole={userRole} showToast={showToast} onNavigate={setView} />
+          )}
+
           {view === "accounts" && (
             <AccountsFinanceView
               invoices={invoices}
@@ -810,6 +820,33 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+function CrmFoundationView({ parties, invoices, userRole, showToast, onNavigate }: { parties: Party[]; invoices: Invoice[]; userRole: "owner" | "supervisor" | "ca"; showToast: (message: string) => void; onNavigate: (view: View) => void }) {
+  const [tab, setTab] = useState("dashboard");
+  const [query, setQuery] = useState("");
+  const leads = [
+    { id: "LD-2601", company: "Marwar Plastic Agencies", city: "Kota", source: "Referral", product: "20L Storage Crate", value: 85000, stage: "Qualified", temperature: "Hot", owner: "Ayush" },
+    { id: "LD-2602", company: "Khandelwal Retail Network", city: "Jaipur", source: "IndiaMART", product: "Pedal Dustbin", value: 132000, stage: "Quotation Sent", temperature: "Warm", owner: "Ayush" },
+    { id: "LD-2603", company: "Shree Om Distributors", city: "Ajmer", source: "Walk-in", product: "Sorting Tray", value: 64000, stage: "Contacted", temperature: "Cold", owner: "Ravi" },
+  ];
+  const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["pipeline", "Pipeline"], ["customers", "Customers"], ["quotations", "Quotations"], ["followups", "Follow-ups"], ["activities", "Activities"], ["complaints", "Complaints"], ["reports", "Reports"], ["settings", "Settings"]];
+  const openPipeline = leads.reduce((sum, lead) => sum + lead.value, 0);
+  const won = parties.filter((party) => party.status === "active").length;
+  const filteredLeads = leads.filter((lead) => `${lead.company} ${lead.city} ${lead.source}`.toLowerCase().includes(query.toLowerCase()));
+  const customerList = parties.filter((party) => party.type === "Customer");
+  const crmTabs = tabs.filter(([value]) => userRole !== "ca" || ["dashboard", "customers", "quotations", "reports"].includes(value));
+  return <div className="crm-module">
+    <div className="crm-header"><div><div className="eyebrow">SALES WORKSPACE · PIPELINE CONTROL</div><h2>CRM</h2><p>Leads, quotations, follow-ups, customers and sales pipeline.</p></div><div className="accounts-header-actions"><span className="finance-role"><ShieldCheck size={15} /> {userRole === "owner" ? "Owner access" : "Read-only view"}</span><button className="btn-primary" onClick={() => showToast("Lead form ready")}><Plus size={16} /> Add lead</button></div></div>
+    <div className="accounts-tabs crm-tabs" role="tablist">{crmTabs.map(([value, label]) => <button key={value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>)}</div>
+    <div className="crm-toolbar"><div className="finance-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search leads, customers or city" /></div><select className="form-control"><option>All owners</option><option>Ayush</option><option>Ravi</option></select><select className="form-control"><option>All sources</option><option>IndiaMART</option><option>Referral</option><option>Walk-in</option></select><button className="btn-outline" onClick={() => showToast("CRM export prepared")}><Download size={14} /> Export</button></div>
+    {tab === "dashboard" && <><div className="finance-kpi-grid crm-kpis"><FinanceKpi label="New leads" value="12" detail="This month · ↑ 20%" tone="blue" icon={<Users size={18} />} /><FinanceKpi label="Open pipeline value" value={rupee.format(openPipeline)} detail="7 active opportunities" tone="purple" icon={<TrendingUp size={18} />} /><FinanceKpi label="Quotations sent" value="8" detail={rupee.format(326000)} tone="orange" icon={<ReceiptText size={18} />} /><FinanceKpi label="Won this month" value={`${won}`} detail={rupee.format(196000)} tone="green" icon={<CheckCircle size={18} />} /><FinanceKpi label="Conversion rate" value="24%" detail="Lead to won" tone="teal" icon={<ArrowUpRight size={18} />} /><FinanceKpi label="Follow-ups overdue" value="3" detail="Needs action today" tone="red" icon={<Clock size={18} />} /></div><div className="crm-dashboard-grid"><section className="panel"><div className="panel-header"><div className="panel-title"><h3>Sales funnel</h3><p>Open opportunities by stage</p></div><button className="btn-outline btn-sm" onClick={() => setTab("pipeline")}>Open pipeline</button></div><div className="crm-funnel">{[["New", 8, 380000], ["Contacted", 6, 294000], ["Qualified", 4, 217000], ["Quotation", 3, 167000], ["Negotiation", 2, 112000], ["Won", 1, 56000]].map(([stage, count, value], index) => <div key={String(stage)}><div><span>{stage}</span><strong>{count} <small>{rupee.format(Number(value))}</small></strong></div><div className="ageing-track"><span style={{ width: `${92 - index * 12}%`, background: index > 4 ? "var(--status-green)" : "var(--status-blue)" }} /></div></div>)}</div></section><section className="panel"><div className="panel-header"><div className="panel-title"><h3>Today's follow-ups</h3><p>Calls, WhatsApp and payment reminders</p></div><span className="badge badge-danger">3 overdue</span></div><div className="crm-followups"><div><span className="status-dot red" /><strong>Arihant Industrial Supplies</strong><small>Payment reminder · 10:30 AM</small><button className="btn-outline btn-sm" onClick={() => showToast("Follow-up marked complete")}>Done</button></div><div><span className="status-dot orange" /><strong>Khandelwal Retail Network</strong><small>Quotation follow-up · 2:00 PM</small><button className="btn-outline btn-sm" onClick={() => showToast("Follow-up rescheduled")}>Reschedule</button></div><div><span className="status-dot blue" /><strong>Marwar Plastic Agencies</strong><small>Send product catalogue · 4:30 PM</small><button className="btn-outline btn-sm" onClick={() => showToast("WhatsApp template ready")}>WhatsApp</button></div></div></section></div></>}
+    {tab === "leads" || tab === "pipeline" ? <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>{tab === "leads" ? "Lead directory" : "Sales pipeline"}</h3><p>Lead to quotation and work-order handoff control</p></div><button className="btn-primary" onClick={() => showToast("Lead form ready")}><Plus size={16} /> Add lead</button></div>{tab === "pipeline" ? <div className="crm-kanban">{["New", "Contacted", "Qualified", "Quotation Sent", "Negotiation", "Won"].map((stage) => <div className="crm-column" key={stage}><div className="crm-column-header"><strong>{stage}</strong><span>{filteredLeads.filter((lead) => lead.stage === stage).length}</span></div>{filteredLeads.filter((lead) => lead.stage === stage).map((lead) => <div className="crm-deal-card" key={lead.id}><strong>{lead.company}</strong><small>{lead.product}</small><b>{rupee.format(lead.value)}</b><span className={`badge badge-${lead.temperature === "Hot" ? "danger" : lead.temperature === "Warm" ? "warning" : "info"}`}>{lead.temperature}</span></div>)}</div>)}</div> : <div className="table-container"><table><thead><tr><th>Lead ID</th><th>Company / contact</th><th>City</th><th>Source</th><th>Product interest</th><th>Expected value</th><th>Stage</th><th>Owner</th></tr></thead><tbody>{filteredLeads.map((lead) => <tr key={lead.id}><td><strong>{lead.id}</strong></td><td>{lead.company}</td><td>{lead.city}</td><td>{lead.source}</td><td>{lead.product}</td><td>{rupee.format(lead.value)}</td><td><span className="badge badge-blue">{lead.stage}</span></td><td>{lead.owner}</td></tr>)}</tbody></table></div>}</section> : tab === "customers" ? <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>Customer 360 directory</h3><p>Shared customer records from Accounts and CRM</p></div><button className="btn-outline" onClick={() => onNavigate("clients")}>Open Accounts customers</button></div><div className="table-container"><table><thead><tr><th>Customer</th><th>City</th><th>GSTIN</th><th>Customer type</th><th>Outstanding</th><th>Status</th></tr></thead><tbody>{customerList.map((party) => <tr key={party.id}><td><strong>{party.name}</strong><small className="table-sub">{party.phone}</small></td><td>{party.city}</td><td>{party.gstin}</td><td>{party.clientCategory ?? "Dealer"}</td><td>{rupee.format(ledgerEntriesForParty(party.id, invoices))}</td><td><span className="badge badge-success">{party.status ?? "active"}</span></td></tr>)}</tbody></table></div></section> : <section className="panel crm-placeholder"><Sparkles size={22} /><h3>{tabs.find(([value]) => value === tab)?.[1] ?? "CRM"}</h3><p>This workspace is ready for the next CRM phase: detailed records, drawer view, approvals and source-linked actions.</p><button className="btn-primary" onClick={() => showToast("CRM workspace ready for configuration")}><Plus size={16} /> Create first record</button></section>}
+  </div>;
+}
+
+function ledgerEntriesForParty(partyId: string, invoices: Invoice[]): number {
+  return invoices.filter((invoice) => invoice.partyId === partyId && invoice.status !== "paid").reduce((sum, invoice) => sum + invoice.total, 0);
 }
 
 /* =========================================================================

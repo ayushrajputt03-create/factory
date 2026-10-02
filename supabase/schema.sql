@@ -172,3 +172,51 @@ begin
   end if;
 end;
 $$;
+
+-- CRM foundation: customers remain shared with Accounts; CRM adds pipeline records.
+create type crm_lead_stage as enum ('new', 'contacted', 'qualified', 'quotation_sent', 'negotiation', 'won', 'lost');
+create type crm_lead_temperature as enum ('hot', 'warm', 'cold');
+
+create table if not exists parties (
+  id uuid primary key default gen_random_uuid(), factory_id uuid not null references factories(id) on delete cascade,
+  name text not null, type text not null default 'Customer', phone text, city text, gstin text, credit_limit_paise bigint not null default 0,
+  credit_period_days integer not null default 15, status text not null default 'active', created_at timestamptz not null default now()
+);
+
+alter table parties add column if not exists crm_owner_id uuid references profiles(id) on delete set null;
+alter table parties add column if not exists customer_type text;
+alter table parties add column if not exists dormant_after_days integer not null default 90;
+
+create table crm_leads (
+  id uuid primary key default gen_random_uuid(), factory_id uuid not null references factories(id) on delete cascade,
+  lead_number text not null, company_name text not null, contact_name text, phone text, email text, city text,
+  source text not null, product_interest jsonb not null default '[]', expected_value_paise bigint not null default 0 check (expected_value_paise >= 0),
+  stage crm_lead_stage not null default 'new', temperature crm_lead_temperature not null default 'warm', owner_id uuid references profiles(id) on delete set null,
+  customer_id uuid, next_follow_up_at timestamptz, expected_close_date date, notes text, source_module text not null default 'crm', source_record_id uuid,
+  created_by uuid not null references profiles(id) on delete restrict, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), deleted_at timestamptz,
+  unique (factory_id, lead_number)
+);
+
+create table crm_stage_history (
+  id uuid primary key default gen_random_uuid(), lead_id uuid not null references crm_leads(id) on delete cascade,
+  from_stage crm_lead_stage, to_stage crm_lead_stage not null, reason text, changed_by uuid not null references profiles(id) on delete restrict, created_at timestamptz not null default now()
+);
+
+create table crm_follow_ups (
+  id uuid primary key default gen_random_uuid(), factory_id uuid not null references factories(id) on delete cascade,
+  lead_id uuid references crm_leads(id) on delete set null, customer_id uuid, type text not null, priority text not null default 'normal',
+  due_at timestamptz not null, assigned_to uuid references profiles(id) on delete set null, notes text, outcome text, status text not null default 'open',
+  source_module text not null default 'crm', source_record_id uuid, created_by uuid not null references profiles(id) on delete restrict, created_at timestamptz not null default now()
+);
+
+create table crm_settings (
+  factory_id uuid primary key references factories(id) on delete cascade,
+  stages jsonb not null default '[{"name":"New","probability":10},{"name":"Contacted","probability":20},{"name":"Qualified","probability":40},{"name":"Quotation Sent","probability":60},{"name":"Negotiation","probability":75},{"name":"Won","probability":100},{"name":"Lost","probability":0}]',
+  lead_sources jsonb not null default '["IndiaMART","JustDial","Website","Referral","Exhibition","Walk-in","Cold Call","WhatsApp","Other"]',
+  lost_reasons jsonb not null default '["Price","Competitor","No response","Delivery time","Quality","Other"]',
+  dormant_days integer not null default 90, minimum_margin_percent numeric(5,2) not null default 18, complaint_sla_hours integer not null default 48, updated_at timestamptz not null default now()
+);
+
+create index crm_leads_factory_stage_idx on crm_leads(factory_id, stage);
+create index crm_leads_owner_followup_idx on crm_leads(owner_id, next_follow_up_at);
+create index crm_followups_due_idx on crm_follow_ups(factory_id, due_at, status);
