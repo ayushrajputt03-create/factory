@@ -34,6 +34,14 @@ import {
   ShoppingBag,
   UserCheck,
   FileText,
+  WalletCards,
+  Landmark,
+  PieChart,
+  ArrowUpRight,
+  ArrowDownRight,
+  Filter,
+  MoreHorizontal,
+  FileSpreadsheet,
 } from "lucide-react";
 import { dataService } from "./lib/dataService";
 import {
@@ -91,6 +99,7 @@ type View =
   | "bom"
   | "billing"
   | "clients"
+  | "accounts"
   | "reports"
   | "notices"
   | "setup";
@@ -552,6 +561,10 @@ export default function App() {
             <span>GST Invoicing</span>
             {overdueInvoices.length > 0 && <span className="nav-badge">{overdueInvoices.length} Due</span>}
           </button>
+          <button className={`nav-item ${view === "accounts" ? "active" : ""}`} onClick={() => setView("accounts")}>
+            <WalletCards size={18} />
+            <span>Accounts & Finance</span>
+          </button>
           <button className={`nav-item ${view === "reports" ? "active" : ""}`} onClick={() => setView("reports")}>
             <BarChart3 size={18} />
             <span>Production Reports</span>
@@ -593,6 +606,7 @@ export default function App() {
                 {view === "bom" && "Bill of Materials (BOM) & Product Recipes"}
                 {view === "billing" && "GST Tax Invoicing & Accounts Portal"}
                 {view === "clients" && "Party Directory & Ledger Balances"}
+                {view === "accounts" && "Accounts & Finance Control Center"}
                 {view === "dispatch" && "Logistics, Shipments & Fleet Tracker"}
                 {view === "reports" && "Operational & Material Consumption Reports"}
                 {view === "notices" && "Plant Bulletins & Quality Circulars"}
@@ -733,6 +747,21 @@ export default function App() {
             />
           )}
 
+          {view === "accounts" && (
+            <AccountsFinanceView
+              invoices={invoices}
+              parties={parties}
+              ledgerEntries={ledgerEntries}
+              materials={materials}
+              products={products}
+              productionEntries={productionEntries}
+              machines={machines}
+              userRole={userRole}
+              onNavigate={setView}
+              showToast={showToast}
+            />
+          )}
+
           {view === "dispatch" && (
             <DispatchView
               dispatches={dispatches}
@@ -781,6 +810,170 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+/* =========================================================================
+   ACCOUNTS & FINANCE CONTROL CENTER
+========================================================================= */
+function AccountsFinanceView({
+  invoices,
+  parties,
+  ledgerEntries,
+  materials,
+  products,
+  productionEntries,
+  machines,
+  userRole,
+  onNavigate,
+  showToast,
+}: {
+  invoices: Invoice[];
+  parties: Party[];
+  ledgerEntries: LedgerEntry[];
+  materials: Material[];
+  products: Product[];
+  productionEntries: ProductionEntry[];
+  machines: Machine[];
+  userRole: "owner" | "supervisor" | "ca";
+  onNavigate: (view: View) => void;
+  showToast: (message: string) => void;
+}) {
+  const [section, setSection] = useState("dashboard");
+  const [query, setQuery] = useState("");
+  const receivables = parties
+    .filter((party) => party.type === "Customer")
+    .map((party) => ({
+      party,
+      balance: ledgerEntries.filter((entry) => entry.partyId === party.id).reduce((total, entry) => total + (entry.type === "debit" ? entry.amount : -entry.amount), 0),
+    }))
+    .filter((item) => item.balance > 0);
+  const totalReceivables = receivables.reduce((total, item) => total + item.balance, 0);
+  const overdue = invoices.filter((invoice) => invoice.status === "overdue").reduce((total, invoice) => total + invoice.total, 0);
+  const totalRevenue = invoices.filter((invoice) => invoice.status === "paid" || invoice.status === "sent").reduce((total, invoice) => total + invoice.total, 0);
+  const productionCost = productionEntries.reduce((total, entry) => total + entry.quantityProduced * 18, 0);
+  const payableEstimate = materials.reduce((total, material) => total + Math.max(0, material.lowStockThreshold - material.currentStock) * material.unitCost, 0) + 185000;
+  const filteredInvoices = invoices.filter((invoice) => {
+    const party = parties.find((item) => item.id === invoice.partyId);
+    return `${invoice.invoiceNumber} ${party?.name ?? ""}`.toLowerCase().includes(query.toLowerCase());
+  });
+  const tabs = [
+    ["dashboard", "Accounts Dashboard"],
+    ["receivables", "Sales & Receivables"],
+    ["payables", "Purchase & Payables"],
+    ["expenses", "Expenses"],
+    ["cash", "Cash & Bank"],
+    ["costing", "Production Costing"],
+    ["payroll", "Payroll Payables"],
+    ["ledger", "Ledger"],
+    ["tax", "GST & Tax"],
+    ["reports", "Financial Reports"],
+    ["settings", "Account Settings"],
+  ];
+  const runAction = (message: string) => showToast(`${message} workspace ready`);
+
+  return (
+    <div className="accounts-module">
+      <div className="accounts-header">
+        <div>
+          <div className="eyebrow">FINANCE CONTROL CENTER · FY 2026–27</div>
+          <h2>Accounts & Finance</h2>
+          <p>Receivables, payables, cash control and factory profitability in one place.</p>
+        </div>
+        <div className="accounts-header-actions">
+          <span className="finance-role"><ShieldCheck size={15} /> {userRole === "owner" ? "Owner access" : userRole === "ca" ? "Read-only CA" : "Supervisor view"}</span>
+          <button className="btn-primary" onClick={() => runAction("Journal entry")}><Plus size={16} /> New journal entry</button>
+        </div>
+      </div>
+
+      <div className="accounts-tabs" role="tablist">
+        {tabs.map(([value, label]) => (
+          <button key={value} className={section === value ? "active" : ""} onClick={() => setSection(value)}>{label}</button>
+        ))}
+      </div>
+
+      {section === "dashboard" && (
+        <>
+          <div className="finance-kpi-grid">
+            <FinanceKpi label="Total receivables" value={rupee.format(totalReceivables)} detail={`${rupee.format(overdue)} overdue`} tone="blue" icon={<ArrowUpRight size={19} />} />
+            <FinanceKpi label="Total payables" value={rupee.format(payableEstimate)} detail="3 bills due this week" tone="orange" icon={<ArrowDownRight size={19} />} />
+            <FinanceKpi label="Cash & bank balance" value={rupee.format(864500)} detail="Updated 10 minutes ago" tone="green" icon={<Landmark size={19} />} />
+            <FinanceKpi label="This month revenue" value={rupee.format(totalRevenue)} detail="↑ 12.4% vs last month" tone="purple" icon={<TrendingUp size={19} />} />
+            <FinanceKpi label="This month expense" value={rupee.format(productionCost + 126000)} detail="Materials · payroll · freight" tone="red" icon={<ReceiptText size={19} />} />
+            <FinanceKpi label="Net profit estimate" value={rupee.format(Math.max(0, totalRevenue - productionCost - 126000))} detail="Revenue minus direct costs" tone="teal" icon={<IndianRupee size={19} />} />
+          </div>
+
+          <div className="finance-layout-main">
+            <section className="panel finance-chart-panel">
+              <div className="panel-header"><div className="panel-title"><h3>Receivables ageing</h3><p>Outstanding customer balances by payment age</p></div><button className="btn-outline btn-sm" onClick={() => setSection("receivables")}><Filter size={14} /> View report</button></div>
+              <div className="ageing-list">
+                {[['Current', 46, 'var(--status-green)'], ['1–30 days', 28, 'var(--status-blue)'], ['31–60 days', 16, 'var(--status-orange)'], ['60+ days', 10, 'var(--status-red)']].map(([label, percent, color]) => (
+                  <div className="ageing-row" key={String(label)}><div><span>{label}</span><strong>{rupee.format(totalReceivables * Number(percent) / 100)}</strong></div><div className="ageing-track"><span style={{ width: `${percent}%`, background: color }} /></div></div>
+                ))}
+              </div>
+            </section>
+            <section className="panel finance-chart-panel">
+              <div className="panel-header"><div className="panel-title"><h3>Monthly cash flow</h3><p>Receipts vs payments · last 6 months</p></div><span className="badge badge-blue">Live ledger</span></div>
+              <div className="cash-bars">{[52, 64, 44, 72, 58, 86].map((height, index) => <div className="cash-bar-column" key={index}><div className="cash-bar" style={{ height: `${height}%` }} /><span>{['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'][index]}</span></div>)}</div>
+            </section>
+          </div>
+
+          <div className="finance-layout-three">
+            <section className="panel"><div className="panel-header"><div className="panel-title"><h3>Quick finance actions</h3><p>Common accounting workflows</p></div></div><div className="finance-actions">{[["Create sales invoice", ReceiptText, "billing"], ["Record payment received", IndianRupee, "receivables"], ["Add expense", FileText, "expenses"], ["Transfer cash to bank", Landmark, "cash"], ["Export financial summary", FileSpreadsheet, "reports"]].map(([label, Icon, target]) => <button key={String(label)} onClick={() => target === "billing" ? onNavigate("billing") : setSection(String(target))}><span className="action-icon"><Icon size={17} /></span>{label}</button>)}</div></section>
+            <section className="panel"><div className="panel-header"><div className="panel-title"><h3>Pending approvals</h3><p>Finance actions needing attention</p></div><span className="badge badge-warning">4 pending</span></div><div className="approval-list"><div><span className="status-dot orange" />Purchase bill <strong>PB-1048</strong><small>₹48,600 · Raw material</small></div><div><span className="status-dot orange" />Expense claim <strong>EXP-238</strong><small>₹12,400 · Maintenance</small></div><div><span className="status-dot blue" />Bank reconciliation <strong>HDFC · Sep</strong><small>₹2,850 difference</small></div></div></section>
+            <section className="panel"><div className="panel-header"><div className="panel-title"><h3>Top outstanding</h3><p>Customers to follow up today</p></div><button className="btn-outline btn-sm" onClick={() => onNavigate("clients")}>Open CRM</button></div><div className="outstanding-list">{receivables.slice(0, 5).map(({ party, balance }) => <div key={party.id}><span className="mini-avatar">{party.name.slice(0, 2).toUpperCase()}</span><span>{party.name}<small>{party.city}</small></span><strong>{rupee.format(balance)}</strong></div>)}</div></section>
+          </div>
+        </>
+      )}
+
+      {section === "receivables" && <FinanceTable title="Sales & Receivables" subtitle="Invoices, payments received and customer ageing" invoices={filteredInvoices} parties={parties} query={query} setQuery={setQuery} onCreate={() => onNavigate("billing")} />}
+      {section === "payables" && <FinanceListSection title="Purchase & Payables" subtitle="Vendor bills, due dates and payment commitments" icon={<ShoppingBag size={20} />} rows={[["PB-1048", "Shree Polymers & Chemicals", "Raw material purchase", "₹48,600", "Due in 4 days", "Pending"], ["PB-1042", "Jaipur Power Corporation", "Electricity · September", "₹32,850", "Due in 8 days", "Approved"], ["PB-1039", "Porter Express Logistics", "Dispatch freight", "₹18,400", "Paid", "Paid"]]} onCreate={() => runAction("Purchase bill")} />}
+      {section === "expenses" && <FinanceListSection title="Expense Management" subtitle="Track, approve and control every factory expense" icon={<ReceiptText size={20} />} rows={[["EXP-238", "Machine Maintenance", "Hydraulic oil & service", "₹12,400", "Today", "Pending Approval"], ["EXP-237", "Transport", "Local dispatch freight", "₹8,200", "Yesterday", "Approved"], ["EXP-236", "Packaging", "Cartons and labels", "₹18,650", "30 Sep", "Paid"]]} onCreate={() => runAction("Expense")} />}
+      {section === "cash" && <CashBankSection showToast={showToast} />}
+      {section === "costing" && <CostingSection products={products} productionEntries={productionEntries} machines={machines} />}
+      {section === "payroll" && <FinanceListSection title="Payroll Payables" subtitle="Liability view from approved HR payroll" icon={<Users size={20} />} rows={[["SEP-2026", "Production team", "Net salary", "₹2,84,500", "10 Oct", "Pending"], ["SEP-2026", "PF / ESI", "Statutory liability", "₹48,200", "15 Oct", "Pending"], ["AUG-2026", "All departments", "Salary payout", "₹3,12,800", "10 Sep", "Paid"]]} onCreate={() => runAction("Payroll payment")} />}
+      {section === "ledger" && <LedgerSection ledgerEntries={ledgerEntries} parties={parties} />}
+      {section === "tax" && <TaxSection invoices={invoices} />}
+      {section === "reports" && <ReportsFinanceSection onExport={() => showToast("Financial report exported")} />}
+      {section === "settings" && <FinanceSettingsSection />}
+    </div>
+  );
+}
+
+function FinanceKpi({ label, value, detail, tone, icon }: { label: string; value: string; detail: string; tone: string; icon: React.ReactNode }) {
+  return <div className="finance-kpi"><div className={`finance-kpi-icon ${tone}`}>{icon}</div><div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div></div>;
+}
+
+function FinanceTable({ title, subtitle, invoices, parties, query, setQuery, onCreate }: { title: string; subtitle: string; invoices: Invoice[]; parties: Party[]; query: string; setQuery: (value: string) => void; onCreate: () => void }) {
+  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>{title}</h3><p>{subtitle}</p></div><button className="btn-primary" onClick={onCreate}><Plus size={16} /> Create sales invoice</button></div><div className="finance-toolbar"><div className="finance-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search invoice, customer or amount" /></div><button className="btn-outline"><Filter size={14} /> Filters</button><button className="btn-outline"><Download size={14} /> Export</button></div><div className="table-container"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Created</th><th>Amount</th><th>Due date</th><th>Status</th><th>Action</th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id}><td><strong>{invoice.invoiceNumber}</strong><small className="table-sub">{invoice.items.length} line items</small></td><td>{parties.find((party) => party.id === invoice.partyId)?.name ?? "Unknown party"}</td><td>{invoice.createdAt}</td><td><strong>{rupee.format(invoice.total)}</strong><small className="table-sub">Balance due</small></td><td>{invoice.dueDate}</td><td><span className={`badge badge-${invoice.status === "overdue" ? "danger" : invoice.status === "paid" ? "success" : "info"}`}>{invoice.status}</span></td><td><button className="icon-button"><MoreHorizontal size={16} /></button></td></tr>)}</tbody></table></div></section>;
+}
+
+function FinanceListSection({ title, subtitle, icon, rows, onCreate }: { title: string; subtitle: string; icon: React.ReactNode; rows: string[][]; onCreate: () => void }) {
+  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title with-icon"><span className="section-icon">{icon}</span><div><h3>{title}</h3><p>{subtitle}</p></div></div><button className="btn-primary" onClick={onCreate}><Plus size={16} /> Add new</button></div><div className="table-container"><table><thead><tr><th>Reference</th><th>Party / Department</th><th>Description</th><th>Amount</th><th>Due / date</th><th>Status</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}>{row.map((cell, index) => <td key={`${row[0]}-${index}`}>{index === 5 ? <span className={`badge badge-${cell === "Paid" || cell === "Approved" ? "success" : cell === "Pending Approval" || cell === "Pending" ? "warning" : "info"}`}>{cell}</span> : cell}</td>)}<td><button className="icon-button"><MoreHorizontal size={16} /></button></td></tr>)}</tbody></table></div></section>;
+}
+
+function CashBankSection({ showToast }: { showToast: (message: string) => void }) {
+  return <div className="finance-cash-grid"><div className="finance-balance-card dark"><div><span>Available cash & bank</span><strong>{rupee.format(864500)}</strong><small>All accounts · reconciled 96%</small></div><Landmark size={30} /></div><div className="finance-balance-card"><span>Cash in hand</span><strong>{rupee.format(84500)}</strong><small>Petty cash · updated today</small><button className="btn-outline btn-sm" onClick={() => showToast("Cash transaction form")}>Add transaction</button></div><div className="finance-balance-card"><span>HDFC Bank · Current</span><strong>{rupee.format(780000)}</strong><small>A/c •••• 4582 · IFSC HDFC000123</small><button className="btn-outline btn-sm" onClick={() => showToast("Bank reconciliation opened")}>Reconcile</button></div><section className="panel wide"><div className="panel-header"><div className="panel-title"><h3>Recent cash and bank transactions</h3><p>Double-entry posting with source references</p></div><button className="btn-primary" onClick={() => showToast("Transfer form ready")}><ArrowUpRight size={16} /> Transfer funds</button></div><FinanceListSection title="" subtitle="" icon={<Landmark size={18} />} rows={[["TRF-982", "Cash → HDFC Bank", "Daily deposit", "₹35,000", "Today", "Posted"], ["RCPT-441", "Jaipur Mega Mart", "Payment received", "₹68,500", "Today", "Posted"], ["PAY-208", "Shree Polymers", "Vendor payment", "₹42,800", "Yesterday", "Posted"]]} onCreate={() => showToast("Transaction form")} /></section></div>;
+}
+
+function CostingSection({ products, productionEntries, machines }: { products: Product[]; productionEntries: ProductionEntry[]; machines: Machine[] }) {
+  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>Production Costing</h3><p>Actual factory cost by work order and finished product</p></div><span className="badge badge-blue">Live from shop floor</span></div><div className="finance-kpi-grid compact"><FinanceKpi label="Direct material cost" value={rupee.format(248600)} detail="Issued inventory rate" tone="blue" icon={<Boxes size={18} />} /><FinanceKpi label="Labour cost" value={rupee.format(86400)} detail="Approved hours" tone="purple" icon={<Users size={18} />} /><FinanceKpi label="Machine runtime" value={rupee.format(52800)} detail={`${machines.length} machines configured`} tone="orange" icon={<Wrench size={18} />} /><FinanceKpi label="Cost per unit" value={rupee.format(18)} detail="Accepted finished goods" tone="green" icon={<IndianRupee size={18} />} /></div><div className="table-container"><table><thead><tr><th>Product</th><th>Planned qty</th><th>Produced</th><th>Rejected</th><th>Total cost</th><th>Cost / unit</th><th>Variance</th></tr></thead><tbody>{products.map((product, index) => <tr key={product.id}><td><strong>{product.name}</strong><small className="table-sub">{product.code}</small></td><td>{product.dailyTarget}</td><td>{productionEntries[index]?.quantityProduced ?? 0}</td><td>{productionEntries[index]?.quantityRejected ?? 0}</td><td>{rupee.format((productionEntries[index]?.quantityProduced ?? 0) * 18)}</td><td>{rupee.format(18)}</td><td><span className="badge badge-success">On plan</span></td></tr>)}</tbody></table></div></section>;
+}
+
+function LedgerSection({ ledgerEntries, parties }: { ledgerEntries: LedgerEntry[]; parties: Party[] }) {
+  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>General Ledger</h3><p>Immutable double-entry transaction register</p></div><button className="btn-primary"><Plus size={16} /> Journal entry</button></div><div className="ledger-summary"><span>Chart of accounts <strong>28 accounts</strong></span><span>Period debits <strong>{rupee.format(ledgerEntries.filter((entry) => entry.type === "debit").reduce((sum, entry) => sum + entry.amount, 0))}</strong></span><span>Period credits <strong>{rupee.format(ledgerEntries.filter((entry) => entry.type === "credit").reduce((sum, entry) => sum + entry.amount, 0))}</strong></span></div><div className="table-container"><table><thead><tr><th>Date</th><th>Party / account</th><th>Source</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead><tbody>{ledgerEntries.map((entry) => <tr key={entry.id}><td>{entry.date}</td><td>{parties.find((party) => party.id === entry.partyId)?.name ?? "Accounts receivable"}</td><td>{entry.note}</td><td>{entry.type === "debit" ? rupee.format(entry.amount) : "—"}</td><td>{entry.type === "credit" ? rupee.format(entry.amount) : "—"}</td><td><strong>{rupee.format(entry.amount)}</strong></td></tr>)}</tbody></table></div></section>;
+}
+
+function TaxSection({ invoices }: { invoices: Invoice[] }) {
+  const output = invoices.reduce((sum, invoice) => sum + invoice.gstAmount, 0);
+  return <div className="tax-grid"><FinanceKpi label="Output GST" value={rupee.format(output)} detail="GST collected on sales" tone="blue" icon={<ReceiptText size={18} />} /><FinanceKpi label="Input GST" value={rupee.format(28400)} detail="Eligible ITC from purchases" tone="green" icon={<ArrowDownRight size={18} />} /><FinanceKpi label="Net GST payable" value={rupee.format(Math.max(0, output - 28400))} detail="Filing period · October 2026" tone="orange" icon={<IndianRupee size={18} />} /><section className="panel wide"><div className="panel-header"><div className="panel-title"><h3>GST compliance workspace</h3><p>Sales register, purchase register, HSN summary and tax liabilities</p></div><span className="badge badge-warning">Filing in 12 days</span></div><div className="tax-checklist">{["Sales register reconciled", "Input tax credit matched", "HSN summary reviewed", "GSTR-1 preparation"].map((item, index) => <div key={item}><span className={`check ${index < 2 ? "done" : ""}`}>{index < 2 ? "✓" : "•"}</span><span>{item}</span><small>{index < 2 ? "Complete" : "Action required"}</small></div>)}</div></section></div>;
+}
+
+function ReportsFinanceSection({ onExport }: { onExport: () => void }) {
+  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>Financial Reports</h3><p>Export-ready reports with date range and plant filters</p></div><button className="btn-primary" onClick={onExport}><Download size={16} /> Export summary</button></div><div className="report-grid">{["Profit & Loss", "Balance Sheet", "Cash Flow Statement", "Trial Balance", "Receivable Aging", "Payable Aging", "Product Profitability", "GST Summary"].map((report) => <button key={report} onClick={onExport}><FileText size={19} /><span>{report}<small>FY 2026–27 · Plant #1</small></span><ChevronRight size={16} /></button>)}</div></section>;
+}
+
+function FinanceSettingsSection() {
+  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>Account Settings</h3><p>Controls for numbering, tax, approvals and financial periods</p></div><span className="badge badge-success">Configuration healthy</span></div><div className="settings-grid">{["Chart of Accounts", "Fiscal Year & Closing", "Invoice Numbering", "GST & TDS Settings", "Bank Accounts", "Approval Workflow", "Cost Allocation Rules", "Financial Permissions"].map((setting) => <div key={setting}><Settings size={18} /><span>{setting}<small>Review and manage settings</small></span><ChevronRight size={16} /></div>)}</div></section>;
 }
 
 /* =========================================================================
