@@ -115,6 +115,13 @@ const numberFmt = new Intl.NumberFormat("en-IN");
 const today = new Date().toISOString().slice(0, 10);
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const addDaysFromToday = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+const viewFromPath = (path: string): View => {
+  if (path.startsWith("/accounts")) return "accounts";
+  if (path.startsWith("/crm")) return "crm";
+  const value = path.replace(/^\//, "").split("/").filter(Boolean).join("_");
+  const supported: View[] = ["dashboard", "entry", "work_orders", "machines", "inventory", "qc", "dispatch", "bom", "billing", "clients", "crm", "accounts", "reports", "notices", "setup"];
+  return supported.includes(value as View) ? value as View : "dashboard";
+};
 
 import {
   calculateAgingBuckets,
@@ -125,7 +132,7 @@ import {
 } from "./lib/crmUtils";
 
 export default function App() {
-  const [view, setView] = useState<View>("dashboard");
+  const [view, setViewState] = useState<View>(() => viewFromPath(window.location.pathname));
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [userRole, setUserRole] = useState<"owner" | "supervisor" | "ca">("owner");
   const [materials, setMaterials] = useState<Material[]>(initialMaterials);
@@ -145,6 +152,22 @@ export default function App() {
   const [qcInspections, setQcInspections] = useState<QcInspection[]>(() => dataService.getQcInspections());
 
   const [toast, setToast] = useState<string>("Plant Online · Shift 1 Running");
+  const setView = (nextView: View) => {
+    setViewState(nextView);
+    const nextPath = nextView === "dashboard" ? "/" : `/${nextView.replaceAll("_", "/")}`;
+    if (window.location.pathname !== nextPath) window.history.pushState({ view: nextView }, "", nextPath);
+    if (["work_orders", "machines", "qc", "bom", "reports", "notices", "setup"].includes(nextView)) setShowMoreNav(true);
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const nextView = viewFromPath(window.location.pathname);
+      setViewState(nextView);
+      if (["work_orders", "machines", "qc", "bom", "reports", "notices", "setup"].includes(nextView)) setShowMoreNav(true);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast("Plant Online · Shift 1 Running"), 4000);
@@ -809,7 +832,21 @@ export default function App() {
 }
 
 function CrmFoundationView({ parties, invoices, userRole, showToast, onNavigate }: { parties: Party[]; invoices: Invoice[]; userRole: "owner" | "supervisor" | "ca"; showToast: (message: string) => void; onNavigate: (view: View) => void }) {
-  const [tab, setTab] = useState("dashboard");
+  const crmTabFromPath = window.location.pathname.split("/")[2] || "dashboard";
+  const [tab, setTabState] = useState(crmTabFromPath === "follow-ups" ? "followups" : crmTabFromPath);
+  const setTab = (nextTab: string) => {
+    setTabState(nextTab);
+    const pathSegment = nextTab === "followups" ? "follow-ups" : nextTab;
+    window.history.pushState({ tab: nextTab }, "", `/crm/${pathSegment}`);
+  };
+  useEffect(() => {
+    const handleCrmPopState = () => {
+      const pathTab = window.location.pathname.split("/")[2] || "dashboard";
+      setTabState(pathTab === "follow-ups" ? "followups" : pathTab);
+    };
+    window.addEventListener("popstate", handleCrmPopState);
+    return () => window.removeEventListener("popstate", handleCrmPopState);
+  }, []);
   const [query, setQuery] = useState("");
   const leads = [
     { id: "LD-2601", company: "Marwar Plastic Agencies", city: "Kota", source: "Referral", product: "20L Storage Crate", value: 85000, stage: "Qualified", temperature: "Hot", owner: "Ayush" },
@@ -861,7 +898,17 @@ function AccountsFinanceView({
   onNavigate: (view: View) => void;
   showToast: (message: string) => void;
 }) {
-  const [section, setSection] = useState("dashboard");
+  const accountsSectionFromPath = window.location.pathname.split("/")[2] || "dashboard";
+  const [section, setSectionState] = useState(accountsSectionFromPath);
+  const setSection = (nextSection: string) => {
+    setSectionState(nextSection);
+    window.history.pushState({ section: nextSection }, "", `/accounts/${nextSection}`);
+  };
+  useEffect(() => {
+    const handleAccountsPopState = () => setSectionState(window.location.pathname.split("/")[2] || "dashboard");
+    window.addEventListener("popstate", handleAccountsPopState);
+    return () => window.removeEventListener("popstate", handleAccountsPopState);
+  }, []);
   const [query, setQuery] = useState("");
   const receivables = parties
     .filter((party) => party.type === "Customer")
