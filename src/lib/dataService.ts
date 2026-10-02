@@ -263,7 +263,7 @@ export const dataService = {
   reportBreakdown(data: {
     machineId: string;
     symptom: string;
-    severity: "Urgent (Plant Stopped)" | "High" | "Normal";
+    severity: "Urgent" | "High" | "Normal";
     reportedBy: string;
   }): BreakdownTicket {
     // TODO: FIREBASE -> Cloud Function transaction: set machine status = "Breakdown" & add breakdown ticket
@@ -316,7 +316,7 @@ export const dataService = {
     return mockStore.getWorkOrders();
   },
 
-  createWorkOrder(data: {
+  createWorkOrder(data: WorkOrder | {
     productId: string;
     quantityOrdered: number;
     dueDate: string;
@@ -324,18 +324,26 @@ export const dataService = {
     assignedOperator: string;
   }): WorkOrder {
     const woList = mockStore.getWorkOrders();
+    // If a full WorkOrder object is passed, use it directly
+    if ("id" in data && data.id) {
+      mockStore.setWorkOrders([data as WorkOrder, ...woList]);
+      return data as WorkOrder;
+    }
+    // Otherwise build one from the minimal data shape
+    const d = data as { productId: string; quantityOrdered: number; dueDate: string; assignedMachineId: string; assignedOperator: string };
     const woNum = `WO-26-${400 + woList.length + 1}`;
-
     const newWo: WorkOrder = {
       id: createId("wo"),
       workOrderNumber: woNum,
-      productId: data.productId,
-      quantityOrdered: data.quantityOrdered,
+      orderNumber: woNum,
+      productId: d.productId,
+      quantityOrdered: d.quantityOrdered,
+      quantity: d.quantityOrdered,
       quantityCompleted: 0,
       status: "Released",
-      dueDate: data.dueDate,
-      assignedMachineId: data.assignedMachineId,
-      assignedOperator: data.assignedOperator,
+      dueDate: d.dueDate,
+      assignedMachineId: d.assignedMachineId,
+      assignedOperator: d.assignedOperator,
       materialReadiness: "Ready",
       stage: "Injection Molding",
       createdAt: nowIso(),
@@ -375,18 +383,23 @@ export const dataService = {
       batchNumber: data.batchNumber.trim(),
       productId: data.productId,
       inspectedQuantity: data.inspectedQuantity,
+      inspectedQty: data.inspectedQuantity,
       passedQuantity: data.passedQuantity,
+      passedQty: data.passedQuantity,
       rejectedQuantity: data.rejectedQuantity,
+      rejectedQty: data.rejectedQuantity,
       defectCode: data.defectCode,
       status: data.status,
       inspector: data.inspector,
       date: today(),
+      inspectedAt: nowIso(),
       notes: data.notes?.trim() || "",
     };
 
     mockStore.setQcInspections([newQc, ...list]);
     return newQc;
   },
+
 
   // ==========================================
   // CLIENT CRM & PARTIES

@@ -79,8 +79,10 @@ export type StockMovement = {
 export type WorkOrder = {
   id: string;
   workOrderNumber: string;
+  orderNumber: string; // alias for display (same as workOrderNumber)
   productId: string;
   quantityOrdered: number;
+  quantity: number; // alias for quantityOrdered
   quantityCompleted: number;
   status: WorkOrderStatus;
   dueDate: string;
@@ -88,6 +90,9 @@ export type WorkOrder = {
   assignedOperator: string;
   materialReadiness: "Ready" | "Shortage Risk" | "Not Allocated";
   stage: "Tooling Setup" | "Injection Molding" | "Trimming & QC" | "Packing";
+  priority?: "Urgent" | "High" | "Normal";
+  notes?: string;
+  createdBy?: string;
   createdAt: string;
 };
 
@@ -95,9 +100,12 @@ export type Machine = {
   id: string;
   name: string;
   code: string;
+  type?: string;
+  location?: string;
   status: MachineStatus;
   currentJob: string;
   operator: string;
+  currentOperator?: string; // alias for operator
   runtimeHours: number;
   nextMaintenanceDate: string;
   lastBreakdownReason?: string;
@@ -107,7 +115,7 @@ export type BreakdownTicket = {
   id: string;
   machineId: string;
   symptom: string;
-  severity: "Urgent (Plant Stopped)" | "High" | "Normal";
+  severity: "Urgent" | "High" | "Normal";
   reportedBy: string;
   stoppedTime: string;
   status: "Open" | "In Repair" | "Resolved";
@@ -118,14 +126,19 @@ export type QcInspection = {
   batchNumber: string;
   productId: string;
   inspectedQuantity: number;
+  inspectedQty: number; // alias
   passedQuantity: number;
+  passedQty: number; // alias
   rejectedQuantity: number;
+  rejectedQty: number; // alias
   defectCode: string;
   status: QcInspectionStatus;
   inspector: string;
   date: string;
+  inspectedAt?: string; // ISO timestamp alias for date
   notes: string;
 };
+
 
 export type PurchaseOrder = {
   id: string;

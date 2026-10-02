@@ -437,7 +437,57 @@ export default function App() {
     showToast("✓ Production CSV Report downloaded successfully.");
   };
 
+  // Handler: Report Machine Breakdown
+  const handleReportBreakdown = (data: { machineId: string; symptom: string; severity: "Urgent" | "High" | "Normal" }) => {
+    dataService.reportBreakdown({ ...data, reportedBy: "Floor Supervisor" });
+    setMachines(dataService.getMachines());
+    setBreakdownTickets(dataService.getBreakdownTickets());
+    showToast(`⚠ Breakdown reported for machine ${data.machineId}.`);
+  };
+
+  // Handler: Resolve Breakdown Ticket
+  const handleResolveBreakdown = (ticketId: string) => {
+    dataService.resolveBreakdown(ticketId);
+    setMachines(dataService.getMachines());
+    setBreakdownTickets(dataService.getBreakdownTickets());
+    showToast("✓ Breakdown resolved. Machine marked back online.");
+  };
+
+  // Handler: Update Work Order Status
+  const handleWorkOrderStatusChange = (id: string, status: WorkOrderStatus) => {
+    dataService.updateWorkOrderStatus(id, status);
+    setWorkOrders(dataService.getWorkOrders());
+    showToast(`✓ Work order status updated to ${status}.`);
+  };
+
+  // Handler: Record QC Inspection
+  const handleRecordQcInspection = (data: {
+    batchNumber: string;
+    productId: string;
+    inspectedQty: number;
+    passedQty: number;
+    rejectedQty: number;
+    defectCode: string;
+    notes: string;
+    inspector: string;
+  }) => {
+    dataService.recordQcInspection({
+      batchNumber: data.batchNumber,
+      productId: data.productId,
+      inspectedQuantity: data.inspectedQty,
+      passedQuantity: data.passedQty,
+      rejectedQuantity: data.rejectedQty,
+      defectCode: data.defectCode,
+      notes: data.notes,
+      inspector: data.inspector,
+      status: data.rejectedQty > 0 ? "On Hold" : "Passed",
+    });
+    setQcInspections(dataService.getQcInspections());
+    showToast(`✓ QC inspection recorded for batch ${data.batchNumber}.`);
+  };
+
   return (
+
     <div className="app-shell">
       {/* Sidebar */}
       <aside className="sidebar">
@@ -536,7 +586,10 @@ export default function App() {
               <h1>
                 {view === "dashboard" && "Factory Command & Analytics Center"}
                 {view === "entry" && "Shop-Floor Live Production Register"}
+                {view === "work_orders" && "Work Order Pipeline & Manufacturing Jobs"}
+                {view === "machines" && "Machine Status Board & Maintenance Tracker"}
                 {view === "inventory" && "Raw Material & Inventory Control"}
+                {view === "qc" && "Quality Control & Inspection Queue"}
                 {view === "bom" && "Bill of Materials (BOM) & Product Recipes"}
                 {view === "billing" && "GST Tax Invoicing & Accounts Portal"}
                 {view === "clients" && "Party Directory & Ledger Balances"}
@@ -593,6 +646,9 @@ export default function App() {
               invoices={invoices}
               dispatches={dispatches}
               notices={notices}
+              machines={machines}
+              workOrders={workOrders}
+              qcInspections={qcInspections}
               setView={setView}
             />
           )}
@@ -612,6 +668,36 @@ export default function App() {
               materials={materials}
               stockMovements={stockMovements}
               onAddMovement={handleStockMovement}
+            />
+          )}
+
+          {view === "work_orders" && (
+            <WorkOrdersView
+              workOrders={workOrders}
+              products={products}
+              machines={machines}
+              userRole={userRole}
+              onStatusChange={handleWorkOrderStatusChange}
+              showToast={showToast}
+            />
+          )}
+
+          {view === "machines" && (
+            <MachinesView
+              machines={machines}
+              breakdownTickets={breakdownTickets}
+              onReportBreakdown={handleReportBreakdown}
+              onResolveBreakdown={handleResolveBreakdown}
+              showToast={showToast}
+            />
+          )}
+
+          {view === "qc" && (
+            <QualityControlView
+              qcInspections={qcInspections}
+              products={products}
+              onRecordInspection={handleRecordQcInspection}
+              showToast={showToast}
             />
           )}
 
@@ -713,6 +799,9 @@ function DashboardView({
   invoices,
   dispatches,
   notices,
+  machines,
+  workOrders,
+  qcInspections,
   setView,
 }: {
   targetProgress: number;
@@ -727,58 +816,117 @@ function DashboardView({
   invoices: Invoice[];
   dispatches: Dispatch[];
   notices: PlantNotice[];
+  machines: Machine[];
+  workOrders: WorkOrder[];
+  qcInspections: QcInspection[];
   setView: (v: View) => void;
 }) {
+  const runningMachines = machines.filter((m) => m.status === "Running").length;
+  const breakdownMachines = machines.filter((m) => m.status === "Breakdown").length;
+  const idleMachines = machines.filter((m) => m.status === "Idle").length;
+  const openWorkOrders = workOrders.filter((w) => w.status === "In Progress" || w.status === "Released").length;
+  const overdueWO = workOrders.filter((w) => w.dueDate < today && w.status !== "Completed" && w.status !== "Closed").length;
+  const qualityAlerts = qcInspections.filter((q) => q.status === "On Hold" || q.status === "Rejected").length;
+  const pendingDispatches = dispatches.filter((d) => d.status === "dispatched").length;
+
+  // Sort machines: Breakdown first, then Idle, then Running, then Maintenance
+  const sortedMachines = [...machines].sort((a, b) => {
+    const order = { Breakdown: 0, Idle: 1, Maintenance: 2, Running: 3 };
+    return (order[a.status] ?? 4) - (order[b.status] ?? 4);
+  });
+
+  const machineStatusBadge = (status: Machine["status"]) => {
+    const map: Record<Machine["status"], string> = {
+      Running: "badge-green",
+      Idle: "badge-orange",
+      Breakdown: "badge-danger",
+      Maintenance: "badge-blue",
+    };
+    return map[status] ?? "badge-gray";
+  };
+
+  const machineStatusDot = (status: Machine["status"]) => {
+    const map: Record<Machine["status"], string> = {
+      Running: "green",
+      Idle: "orange",
+      Breakdown: "red",
+      Maintenance: "blue",
+    };
+    return map[status] ?? "gray";
+  };
+
   return (
     <>
-      {/* Metric KPI Cards */}
+      {/* 6 Metric KPI Cards — Blueprint Section 3.1 */}
       <div className="metric-grid">
-        <div className="metric-card">
+        <div className="metric-card" style={{ cursor: "pointer" }} onClick={() => setView("entry")}>
           <div className="metric-icon-box teal">
             <Gauge size={26} />
           </div>
           <div className="metric-data">
-            <span className="metric-label">Today's Output</span>
+            <span className="metric-label">Today's Production</span>
             <span className="metric-value">{numberFmt.format(totalProduced)} <small style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>/ {numberFmt.format(dailyTarget)}</small></span>
             <span className="metric-sub">{targetProgress}% of Daily Target</span>
           </div>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-icon-box green">
-            <TrendingUp size={26} />
+        <div className="metric-card" style={{ cursor: "pointer" }} onClick={() => setView("work_orders")}>
+          <div className="metric-icon-box blue">
+            <ClipboardList size={26} />
           </div>
           <div className="metric-data">
-            <span className="metric-label">Reject Rate</span>
-            <span className="metric-value">{rejectRate.toFixed(1)}%</span>
-            <span className="metric-sub">{rejectRate < 3 ? "✓ Quality in control" : "⚠ Check mold cooling"}</span>
+            <span className="metric-label">Open Work Orders</span>
+            <span className="metric-value">{openWorkOrders}</span>
+            <span className="metric-sub">{overdueWO > 0 ? `⚠ ${overdueWO} overdue` : "All on schedule"}</span>
           </div>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-icon-box amber">
+        <div className="metric-card" style={{ cursor: "pointer" }} onClick={() => setView("machines")}>
+          <div className={`metric-icon-box ${breakdownMachines > 0 ? "red" : "green"}`}>
+            <Wrench size={26} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Machine Status</span>
+            <span className="metric-value">{runningMachines} <small style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>/ {machines.length}</small></span>
+            <span className="metric-sub">{breakdownMachines > 0 ? `🔴 ${breakdownMachines} breakdown · ${idleMachines} idle` : `${idleMachines} idle · All healthy`}</span>
+          </div>
+        </div>
+
+        <div className="metric-card" style={{ cursor: "pointer" }} onClick={() => setView("inventory")}>
+          <div className={`metric-icon-box ${lowStockCount > 0 ? "orange" : "green"}`}>
             <AlertTriangle size={26} />
           </div>
           <div className="metric-data">
-            <span className="metric-label">Low Stock Alerts</span>
+            <span className="metric-label">Material Risk</span>
             <span className="metric-value">{lowStockCount}</span>
-            <span className="metric-sub">{lowStockCount === 0 ? "Inventory Healthy" : "Needs Purchase Inward"}</span>
+            <span className="metric-sub">{lowStockCount === 0 ? "Inventory Healthy" : `${lowStockCount} below threshold`}</span>
           </div>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-icon-box purple">
-            <IndianRupee size={26} />
+        <div className="metric-card" style={{ cursor: "pointer" }} onClick={() => setView("qc")}>
+          <div className={`metric-icon-box ${qualityAlerts > 0 ? "red" : "green"}`}>
+            <ShieldAlert size={26} />
           </div>
           <div className="metric-data">
-            <span className="metric-label">Outstanding Dues</span>
-            <span className="metric-value">{rupee.format(totalOutstanding)}</span>
-            <span className="metric-sub">Client receivable balance</span>
+            <span className="metric-label">Quality Alerts</span>
+            <span className="metric-value">{qualityAlerts}</span>
+            <span className="metric-sub">{qualityAlerts === 0 ? "No QC holds" : `${qualityAlerts} on hold / rejected`}</span>
+          </div>
+        </div>
+
+        <div className="metric-card" style={{ cursor: "pointer" }} onClick={() => setView("dispatch")}>
+          <div className="metric-icon-box cyan">
+            <Truck size={26} />
+          </div>
+          <div className="metric-data">
+            <span className="metric-label">Dispatch Pending</span>
+            <span className="metric-value">{pendingDispatches}</span>
+            <span className="metric-sub">{pendingDispatches === 0 ? "All shipments delivered" : `${pendingDispatches} in transit`}</span>
           </div>
         </div>
       </div>
 
-      {/* Quick Action Tiles */}
+      {/* Quick Action Strip */}
       <div className="panel">
         <div className="panel-header">
           <div className="panel-title">
@@ -792,6 +940,12 @@ function DashboardView({
               <Plus size={22} />
             </div>
             <span>Log Production</span>
+          </button>
+          <button className="quick-action-btn" onClick={() => setView("work_orders")}>
+            <div className="icon-box" style={{ background: "var(--status-blue-bg)", color: "var(--status-blue)" }}>
+              <ClipboardList size={22} />
+            </div>
+            <span>Work Orders</span>
           </button>
           <button className="quick-action-btn" onClick={() => setView("inventory")}>
             <div className="icon-box" style={{ background: "var(--success-bg)", color: "var(--success)" }}>
@@ -814,7 +968,43 @@ function DashboardView({
         </div>
       </div>
 
-      {/* 2-Column Section */}
+      {/* Machine Status Board — Blueprint Section 3.2 (Breakdown rows first) */}
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Machine Status Board</h3>
+            <p>Live floor status — breakdowns surface first</p>
+          </div>
+          <button className="btn-outline btn-sm" onClick={() => setView("machines")}>
+            Maintenance Log <ChevronRight size={14} />
+          </button>
+        </div>
+        <div className="machine-board">
+          {sortedMachines.map((m) => (
+            <div key={m.id} className={`machine-card ${m.status === "Breakdown" ? "breakdown" : ""}`}>
+              <div className="machine-card-header">
+                <span className="machine-code">{m.code}</span>
+                <span className={`badge ${machineStatusBadge(m.status)}`}>
+                  <span className={`status-dot ${machineStatusDot(m.status)}`} />
+                  {m.status}
+                </span>
+              </div>
+              <div className="machine-name">{m.name}</div>
+              <div className="machine-meta">{m.type} · {m.location}</div>
+              {m.currentOperator && (
+                <div className="machine-meta">Operator: <strong>{m.currentOperator}</strong></div>
+              )}
+              {m.status === "Breakdown" && (
+                <div style={{ fontSize: "0.74rem", color: "var(--status-red)", fontWeight: 700, marginTop: "0.25rem" }}>
+                  ⚠ Breakdown — needs immediate attention
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 2-Column: Production Progress + Plant Bulletins */}
       <div className="grid-2">
         {/* Production Progress By Product */}
         <div className="panel">
@@ -3593,3 +3783,684 @@ function SetupView({
   );
 }
 
+
+/* =========================================================================
+   WORK ORDERS VIEW — Blueprint Section 4 & 8.1
+========================================================================= */
+function WorkOrdersView({
+  workOrders,
+  products,
+  machines,
+  userRole,
+  onStatusChange,
+  showToast,
+}: {
+  workOrders: WorkOrder[];
+  products: Product[];
+  machines: Machine[];
+  userRole: "owner" | "supervisor" | "ca";
+  onStatusChange: (id: string, status: WorkOrderStatus) => void;
+  showToast: (msg: string) => void;
+}) {
+  const [filterStatus, setFilterStatus] = useState<WorkOrderStatus | "all">("all");
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [newForm, setNewForm] = useState({
+    productId: products[0]?.id ?? "",
+    quantity: "",
+    machineId: machines[0]?.id ?? "",
+    dueDate: "",
+    priority: "Normal" as "Urgent" | "High" | "Normal",
+    notes: "",
+  });
+
+  const filtered = workOrders.filter((w) => filterStatus === "all" || w.status === filterStatus);
+
+  const PIPELINE: WorkOrderStatus[] = ["Draft", "Released", "In Progress", "On Hold", "Completed", "Closed"];
+
+  const statusBadge = (s: WorkOrderStatus) => {
+    const map: Record<WorkOrderStatus, string> = {
+      Draft: "badge-gray",
+      Released: "badge-blue",
+      "In Progress": "badge-green",
+      "On Hold": "badge-orange",
+      Completed: "badge-green",
+      Closed: "badge-gray",
+    };
+    return map[s] ?? "badge-gray";
+  };
+
+  const nextStatus = (s: WorkOrderStatus): WorkOrderStatus | null => {
+    const map: Partial<Record<WorkOrderStatus, WorkOrderStatus>> = {
+      Draft: "Released",
+      Released: "In Progress",
+      "In Progress": "Completed",
+      "On Hold": "In Progress",
+      Completed: "Closed",
+    };
+    return map[s] ?? null;
+  };
+
+  const priorityBadge = (p: string) => {
+    if (p === "Urgent") return "badge-danger";
+    if (p === "High") return "badge-orange";
+    return "badge-gray";
+  };
+
+  const handleCreateWorkOrder = () => {
+    if (!newForm.productId || !newForm.quantity || !newForm.dueDate) {
+      showToast("Fill in product, quantity and due date.");
+      return;
+    }
+    const product = products.find((p) => p.id === newForm.productId);
+    const woNum = `WO-${1000 + workOrders.length + 1}`;
+    const wo: WorkOrder = {
+      id: `wo-${Date.now()}`,
+      workOrderNumber: woNum,
+      orderNumber: woNum,
+      productId: newForm.productId,
+      quantityOrdered: Number(newForm.quantity),
+      quantity: Number(newForm.quantity),
+      quantityCompleted: 0,
+      status: "Draft",
+      assignedMachineId: newForm.machineId,
+      assignedOperator: "Floor Operator",
+      materialReadiness: "Not Allocated",
+      stage: "Tooling Setup",
+      priority: newForm.priority,
+      dueDate: newForm.dueDate,
+      notes: newForm.notes,
+      createdAt: new Date().toISOString(),
+      createdBy: "Supervisor",
+    };
+    // TODO: FIREBASE — Firestore transaction, update workOrders subcollection
+    // TODO: SUPABASE (later) — INSERT INTO work_orders ...
+    dataService.createWorkOrder(wo);
+    onStatusChange(wo.id, wo.status); // triggers state refresh
+    setShowNewForm(false);
+    showToast(`✓ Work Order ${wo.orderNumber} created for ${product?.name}`);
+  };
+
+
+  return (
+    <div className="content-grid">
+      {/* Pipeline Summary Strip */}
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Work Order Pipeline</h3>
+            <p>Track manufacturing jobs from Draft to Closed</p>
+          </div>
+          {userRole !== "ca" && (
+            <button className="btn-primary" onClick={() => setShowNewForm(!showNewForm)}>
+              <Plus size={16} /> New Work Order
+            </button>
+          )}
+        </div>
+
+        <div className="pipeline-steps" style={{ marginBottom: "1rem" }}>
+          {PIPELINE.map((step) => {
+            const count = workOrders.filter((w) => w.status === step).length;
+            const isActive = filterStatus === step;
+            return (
+              <button
+                key={step}
+                className={`pipeline-step ${isActive ? "active" : count > 0 ? "" : ""}`}
+                style={{ cursor: "pointer" }}
+                onClick={() => setFilterStatus(isActive ? "all" : step)}
+              >
+                {step} {count > 0 && <strong>({count})</strong>}
+              </button>
+            );
+          })}
+          <button
+            className={`pipeline-step ${filterStatus === "all" ? "active" : ""}`}
+            onClick={() => setFilterStatus("all")}
+          >
+            All ({workOrders.length})
+          </button>
+        </div>
+
+        {/* New Work Order Form */}
+        {showNewForm && (
+          <div style={{ background: "#F8FAFC", border: "1px solid var(--card-border)", borderRadius: "var(--radius-md)", padding: "1.15rem", marginBottom: "1rem" }}>
+            <h4 style={{ fontSize: "0.88rem", fontWeight: 800, marginBottom: "0.75rem" }}>Create New Work Order</h4>
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Product</label>
+                <select className="form-control" value={newForm.productId} onChange={(e) => setNewForm({ ...newForm, productId: e.target.value })}>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Target Quantity</label>
+                <input type="number" className="form-control" value={newForm.quantity} onChange={(e) => setNewForm({ ...newForm, quantity: e.target.value })} placeholder="e.g. 500" />
+              </div>
+              <div className="form-group">
+                <label>Assign Machine</label>
+                <select className="form-control" value={newForm.machineId} onChange={(e) => setNewForm({ ...newForm, machineId: e.target.value })}>
+                  {machines.map((m) => <option key={m.id} value={m.id}>{m.name} [{m.status}]</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Due Date</label>
+                <input type="date" className="form-control" value={newForm.dueDate} onChange={(e) => setNewForm({ ...newForm, dueDate: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Priority</label>
+                <select className="form-control" value={newForm.priority} onChange={(e) => setNewForm({ ...newForm, priority: e.target.value as any })}>
+                  <option value="Normal">Normal</option>
+                  <option value="High">High</option>
+                  <option value="Urgent">Urgent</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Notes</label>
+                <input type="text" className="form-control" value={newForm.notes} onChange={(e) => setNewForm({ ...newForm, notes: e.target.value })} placeholder="Optional notes" />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.85rem" }}>
+              <button className="btn-primary" onClick={handleCreateWorkOrder}><CheckCircle size={16} /> Create Work Order</button>
+              <button className="btn-outline" onClick={() => setShowNewForm(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Work Orders Table */}
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>WO #</th>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Machine</th>
+                <th>Priority</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem" }}>No work orders found.</td></tr>
+              ) : (
+                filtered.map((wo) => {
+                  const product = products.find((p) => p.id === wo.productId);
+                  const machine = machines.find((m) => m.id === wo.assignedMachineId);
+                  const next = nextStatus(wo.status);
+                  const isOverdue = wo.dueDate < today && wo.status !== "Completed" && wo.status !== "Closed";
+                  return (
+                    <tr key={wo.id}>
+                      <td><code>{wo.orderNumber}</code></td>
+                      <td><strong>{product?.name ?? wo.productId}</strong></td>
+                      <td>{wo.quantity.toLocaleString("en-IN")} {product?.unit}</td>
+                      <td>{machine?.name ?? wo.assignedMachineId ?? "—"}</td>
+                      <td><span className={`badge ${priorityBadge(wo.priority ?? "Normal")}`}>{wo.priority ?? "Normal"}</span></td>
+                      <td>
+                        <span style={{ color: isOverdue ? "var(--status-red)" : "inherit", fontWeight: isOverdue ? 700 : 500 }}>
+                          {wo.dueDate}{isOverdue ? " ⚠" : ""}
+                        </span>
+                      </td>
+                      <td><span className={`badge ${statusBadge(wo.status)}`}>{wo.status}</span></td>
+                      <td>
+                        {userRole !== "ca" && next && (
+                          <button className="btn-outline btn-sm" onClick={() => onStatusChange(wo.id, next)}>
+                            → {next}
+                          </button>
+                        )}
+                        {userRole !== "ca" && wo.status === "In Progress" && (
+                          <button className="btn-outline btn-sm" style={{ marginLeft: "0.4rem", color: "var(--status-orange)" }}
+                            onClick={() => onStatusChange(wo.id, "On Hold")}>
+                            Hold
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   MACHINES VIEW — Blueprint Section 8.2
+========================================================================= */
+function MachinesView({
+  machines,
+  breakdownTickets,
+  onReportBreakdown,
+  onResolveBreakdown,
+  showToast,
+}: {
+  machines: Machine[];
+  breakdownTickets: BreakdownTicket[];
+  onReportBreakdown: (data: { machineId: string; symptom: string; severity: "Urgent" | "High" | "Normal" }) => void;
+  onResolveBreakdown: (ticketId: string) => void;
+  showToast: (msg: string) => void;
+}) {
+  const [showBreakdownModal, setShowBreakdownModal] = useState(false);
+  const [bdForm, setBdForm] = useState({
+    machineId: machines[0]?.id ?? "",
+    symptom: "",
+    severity: "Normal" as "Urgent" | "High" | "Normal",
+  });
+
+  // Breakdown rows first, then Idle, then Maintenance, then Running
+  const sortedMachines = [...machines].sort((a, b) => {
+    const order: Record<string, number> = { Breakdown: 0, Idle: 1, Maintenance: 2, Running: 3 };
+    return (order[a.status] ?? 4) - (order[b.status] ?? 4);
+  });
+
+  const statusBadge = (s: Machine["status"]) => {
+    const map: Record<Machine["status"], string> = {
+      Running: "badge-green",
+      Idle: "badge-orange",
+      Breakdown: "badge-danger",
+      Maintenance: "badge-blue",
+    };
+    return map[s] ?? "badge-gray";
+  };
+
+  const openTickets = breakdownTickets.filter((t) => t.status === "Open");
+
+  const handleSubmitBreakdown = () => {
+    if (!bdForm.machineId || !bdForm.symptom) {
+      showToast("Select machine and describe the symptom.");
+      return;
+    }
+    onReportBreakdown(bdForm);
+    setShowBreakdownModal(false);
+    setBdForm({ machineId: machines[0]?.id ?? "", symptom: "", severity: "Normal" });
+  };
+
+  return (
+    <div className="content-grid">
+      {/* Stats Strip */}
+      <div className="metric-grid">
+        <div className="metric-card">
+          <div className="metric-icon-box green"><Cpu size={24} /></div>
+          <div className="metric-data">
+            <span className="metric-label">Running</span>
+            <span className="metric-value">{machines.filter((m) => m.status === "Running").length}</span>
+            <span className="metric-sub">of {machines.length} total machines</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon-box orange"><Clock size={24} /></div>
+          <div className="metric-data">
+            <span className="metric-label">Idle</span>
+            <span className="metric-value">{machines.filter((m) => m.status === "Idle").length}</span>
+            <span className="metric-sub">Awaiting assignment</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon-box red"><AlertTriangle size={24} /></div>
+          <div className="metric-data">
+            <span className="metric-label">Breakdown</span>
+            <span className="metric-value">{machines.filter((m) => m.status === "Breakdown").length}</span>
+            <span className="metric-sub">{openTickets.length} open tickets</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon-box blue"><Wrench size={24} /></div>
+          <div className="metric-data">
+            <span className="metric-label">Maintenance</span>
+            <span className="metric-value">{machines.filter((m) => m.status === "Maintenance").length}</span>
+            <span className="metric-sub">Scheduled PM</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Machine Table — Breakdown rows first */}
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Machine Status Board</h3>
+            <p>Breakdowns surfaced first · Click "Report Breakdown" to raise a ticket</p>
+          </div>
+          <button className="btn-danger btn-sm" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }} onClick={() => setShowBreakdownModal(true)}>
+            <AlertTriangle size={15} /> Report Breakdown
+          </button>
+        </div>
+
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Machine</th>
+                <th>Code</th>
+                <th>Type / Location</th>
+                <th>Status</th>
+                <th>Operator</th>
+                <th>Runtime (hrs)</th>
+                <th>Next PM</th>
+                <th>Open Tickets</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedMachines.map((m) => {
+                const tickets = breakdownTickets.filter((t) => t.machineId === m.id && t.status === "Open");
+                return (
+                  <tr key={m.id} className={m.status === "Breakdown" ? "row-breakdown" : ""}>
+                    <td><strong>{m.name}</strong></td>
+                    <td><code>{m.code}</code></td>
+                    <td>{m.type} · {m.location}</td>
+                    <td>
+                      <span className={`badge ${statusBadge(m.status)}`}>
+                        {m.status}
+                      </span>
+                    </td>
+                    <td>{m.currentOperator ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
+                    <td>{m.runtimeHours ?? "—"} hrs</td>
+                    <td>{m.nextMaintenanceDate ?? "—"}</td>
+                    <td>
+                      {tickets.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                          {tickets.map((t) => (
+                            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <span className={`badge badge-${t.severity === "Urgent" ? "danger" : t.severity === "High" ? "orange" : "gray"}`}>{t.severity}</span>
+                              <span style={{ fontSize: "0.76rem" }}>{t.symptom}</span>
+                              <button className="btn-outline btn-sm" style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
+                                onClick={() => onResolveBreakdown(t.id)}>✓ Resolve</button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>None</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Breakdown Modal */}
+      {showBreakdownModal && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(2,16,36,0.5)", zIndex: 50,
+          display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+          <div style={{ background: "#fff", borderRadius: "var(--radius-lg)", padding: "1.75rem", width: "460px", maxWidth: "95vw", boxShadow: "var(--shadow-md)" }}>
+            <h3 style={{ fontSize: "1.05rem", fontWeight: 800, marginBottom: "1.15rem", color: "var(--status-red)" }}>
+              ⚠ Report Machine Breakdown
+            </h3>
+            <div className="form-panel">
+              <div className="form-group">
+                <label>Machine</label>
+                <select className="form-control" value={bdForm.machineId} onChange={(e) => setBdForm({ ...bdForm, machineId: e.target.value })}>
+                  {machines.map((m) => <option key={m.id} value={m.id}>{m.name} [{m.status}]</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Symptom / Description</label>
+                <input type="text" className="form-control" value={bdForm.symptom}
+                  onChange={(e) => setBdForm({ ...bdForm, symptom: e.target.value })}
+                  placeholder="e.g. Hydraulic oil leak on left cylinder" />
+              </div>
+              <div className="form-group">
+                <label>Severity</label>
+                <select className="form-control" value={bdForm.severity} onChange={(e) => setBdForm({ ...bdForm, severity: e.target.value as any })}>
+                  <option value="Normal">Normal — Can wait till shift end</option>
+                  <option value="High">High — Fix within 2 hours</option>
+                  <option value="Urgent">Urgent — Production stopped NOW</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.15rem" }}>
+              <button className="btn-danger" onClick={handleSubmitBreakdown}><AlertTriangle size={15} /> Submit Breakdown Report</button>
+              <button className="btn-outline" onClick={() => setShowBreakdownModal(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   QUALITY CONTROL VIEW — Blueprint Section 4
+========================================================================= */
+function QualityControlView({
+  qcInspections,
+  products,
+  onRecordInspection,
+  showToast,
+}: {
+  qcInspections: QcInspection[];
+  products: Product[];
+  onRecordInspection: (data: {
+    batchNumber: string;
+    productId: string;
+    inspectedQty: number;
+    passedQty: number;
+    rejectedQty: number;
+    defectCode: string;
+    notes: string;
+    inspector: string;
+  }) => void;
+  showToast: (msg: string) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({
+    batchNumber: "",
+    productId: products[0]?.id ?? "",
+    inspectedQty: "",
+    passedQty: "",
+    rejectedQty: "0",
+    defectCode: "",
+    notes: "",
+    inspector: "QC Inspector",
+  });
+
+  const statusBadge = (s: QcInspectionStatus) => {
+    const map: Record<QcInspectionStatus, string> = {
+      Passed: "badge-green",
+      "On Hold": "badge-orange",
+      Rejected: "badge-danger",
+      Pending: "badge-blue",
+    };
+    return map[s] ?? "badge-gray";
+  };
+
+  const onHoldOrRejected = qcInspections.filter((q) => q.status === "On Hold" || q.status === "Rejected");
+  const passed = qcInspections.filter((q) => q.status === "Passed").length;
+  const pending = qcInspections.filter((q) => q.status === "Pending").length;
+  const totalRejectedQty = qcInspections.reduce((sum, q) => sum + q.rejectedQty, 0);
+
+  const handleSubmit = () => {
+    if (!form.batchNumber || !form.productId || !form.inspectedQty || !form.passedQty) {
+      showToast("Fill in batch #, product, and quantities.");
+      return;
+    }
+    const inspected = Number(form.inspectedQty);
+    const passedQty = Number(form.passedQty);
+    const rejectedQty = Number(form.rejectedQty);
+    if (passedQty + rejectedQty > inspected) {
+      showToast("Passed + Rejected cannot exceed Inspected quantity.");
+      return;
+    }
+    onRecordInspection({
+      batchNumber: form.batchNumber,
+      productId: form.productId,
+      inspectedQty: inspected,
+      passedQty,
+      rejectedQty,
+      defectCode: form.defectCode,
+      notes: form.notes,
+      inspector: form.inspector,
+    });
+    setShowForm(false);
+    setForm({ batchNumber: "", productId: products[0]?.id ?? "", inspectedQty: "", passedQty: "", rejectedQty: "0", defectCode: "", notes: "", inspector: "QC Inspector" });
+  };
+
+  return (
+    <div className="content-grid">
+      {/* KPI Strip */}
+      <div className="metric-grid">
+        <div className="metric-card">
+          <div className="metric-icon-box green"><ShieldCheck size={24} /></div>
+          <div className="metric-data">
+            <span className="metric-label">Passed</span>
+            <span className="metric-value">{passed}</span>
+            <span className="metric-sub">Lots cleared for dispatch</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon-box blue"><History size={24} /></div>
+          <div className="metric-data">
+            <span className="metric-label">Pending</span>
+            <span className="metric-value">{pending}</span>
+            <span className="metric-sub">Awaiting inspection</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className={`metric-icon-box ${onHoldOrRejected.length > 0 ? "red" : "green"}`}><ShieldAlert size={24} /></div>
+          <div className="metric-data">
+            <span className="metric-label">On Hold / Rejected</span>
+            <span className="metric-value">{onHoldOrRejected.length}</span>
+            <span className="metric-sub">Cannot dispatch — QC Hold active</span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-icon-box orange"><AlertTriangle size={24} /></div>
+          <div className="metric-data">
+            <span className="metric-label">Total Rejected Units</span>
+            <span className="metric-value">{totalRejectedQty.toLocaleString("en-IN")}</span>
+            <span className="metric-sub">Across all inspections</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Active Blockers */}
+      {onHoldOrRejected.length > 0 && (
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <h3>⛔ Active QC Blockers</h3>
+              <p>These lots cannot be dispatched until QC is cleared</p>
+            </div>
+          </div>
+          {onHoldOrRejected.map((q) => {
+            const product = products.find((p) => p.id === q.productId);
+            return (
+              <div key={q.id} className="blocker-alert" style={{ marginBottom: "0.5rem" }}>
+                <ShieldAlert size={16} />
+                <strong>Batch {q.batchNumber}</strong> — {product?.name} — {q.rejectedQty} units rejected
+                {q.defectCode && <> · Defect: <code>{q.defectCode}</code></>}
+                <span className={`badge ${statusBadge(q.status)}`} style={{ marginLeft: "auto" }}>{q.status}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Inspection Table */}
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>Inspection Queue</h3>
+            <p>All QC inspection records — newest first</p>
+          </div>
+          <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
+            <Plus size={16} /> Record Inspection
+          </button>
+        </div>
+
+        {/* New Inspection Form */}
+        {showForm && (
+          <div style={{ background: "#F8FAFC", border: "1px solid var(--card-border)", borderRadius: "var(--radius-md)", padding: "1.15rem", marginBottom: "1rem" }}>
+            <h4 style={{ fontSize: "0.88rem", fontWeight: 800, marginBottom: "0.75rem" }}>New QC Inspection Entry</h4>
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Batch Number</label>
+                <input type="text" className="form-control" value={form.batchNumber} onChange={(e) => setForm({ ...form, batchNumber: e.target.value })} placeholder="e.g. BATCH-001" />
+              </div>
+              <div className="form-group">
+                <label>Product</label>
+                <select className="form-control" value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })}>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Inspected Qty</label>
+                <input type="number" className="form-control" value={form.inspectedQty} onChange={(e) => setForm({ ...form, inspectedQty: e.target.value })} placeholder="Total inspected" />
+              </div>
+              <div className="form-group">
+                <label>Passed Qty</label>
+                <input type="number" className="form-control" value={form.passedQty} onChange={(e) => setForm({ ...form, passedQty: e.target.value })} placeholder="Qty passed" />
+              </div>
+              <div className="form-group">
+                <label>Rejected Qty</label>
+                <input type="number" className="form-control" value={form.rejectedQty} onChange={(e) => setForm({ ...form, rejectedQty: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Defect Code</label>
+                <input type="text" className="form-control" value={form.defectCode} onChange={(e) => setForm({ ...form, defectCode: e.target.value })} placeholder="e.g. WARPAGE-01" />
+              </div>
+              <div className="form-group">
+                <label>Inspector Name</label>
+                <input type="text" className="form-control" value={form.inspector} onChange={(e) => setForm({ ...form, inspector: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Notes</label>
+                <input type="text" className="form-control" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.85rem" }}>
+              <button className="btn-primary" onClick={handleSubmit}><CheckCircle size={16} /> Record Inspection</button>
+              <button className="btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Batch #</th>
+                <th>Product</th>
+                <th>Inspected</th>
+                <th>Passed</th>
+                <th>Rejected</th>
+                <th>Defect Code</th>
+                <th>Status</th>
+                <th>Inspector</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {qcInspections.length === 0 ? (
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem" }}>No inspections recorded yet.</td></tr>
+              ) : (
+                qcInspections.map((q) => {
+                  const product = products.find((p) => p.id === q.productId);
+                  return (
+                    <tr key={q.id}>
+                      <td><code>{q.batchNumber}</code></td>
+                      <td>{product?.name ?? q.productId}</td>
+                      <td>{q.inspectedQty}</td>
+                      <td style={{ color: "var(--status-green)", fontWeight: 700 }}>{q.passedQty}</td>
+                      <td style={{ color: q.rejectedQty > 0 ? "var(--status-red)" : "inherit", fontWeight: q.rejectedQty > 0 ? 700 : 500 }}>{q.rejectedQty}</td>
+                      <td>{q.defectCode ? <code>{q.defectCode}</code> : "—"}</td>
+                      <td><span className={`badge ${statusBadge(q.status)}`}>{q.status}</span></td>
+                      <td>{q.inspector}</td>
+                      <td>{q.inspectedAt ? q.inspectedAt.slice(0, 10) : "—"}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
