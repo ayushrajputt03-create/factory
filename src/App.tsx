@@ -169,6 +169,26 @@ export default function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+  useEffect(() => {
+    const labels: Partial<Record<View, string>> = {
+      dashboard: "Command Center",
+      entry: "Production Board",
+      work_orders: "Work Orders",
+      machines: "Machines & Maintenance",
+      inventory: "Inventory",
+      qc: "Quality Control",
+      dispatch: "Dispatch & Logistics",
+      bom: "BOM & Recipes",
+      billing: "GST Invoicing",
+      clients: "Client CRM & Accounts",
+      crm: "CRM",
+      accounts: "Accounts & Finance",
+      reports: "Production Reports",
+      notices: "Plant Bulletins",
+      setup: "Setup & Masters",
+    };
+    document.title = `${labels[view] ?? "Factory OS"} · Factory OS`;
+  }, [view]);
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast("Plant Online · Shift 1 Running"), 4000);
