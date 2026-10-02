@@ -1090,6 +1090,27 @@ body {
 .page-title h1 { font-size: 1.1rem; color: #1f2a3d; }
 .page-title p { color: #7b8799; font-size: 0.7rem; }
 
+.page-title {
+  min-width: 0;
+  max-width: 430px;
+}
+
+.page-title h1 {
+  font-size: 1.02rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-title p {
+  font-size: 0.68rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .view-body {
   max-width: 1540px;
   padding: 2rem 1.75rem;
@@ -1105,13 +1126,13 @@ body {
 .metric-card { padding: 1.1rem 1rem; }
 .metric-card:hover { border-color: #c8d5e5; box-shadow: 0 8px 20px -18px rgb(15 23 42 / 0.35); transform: translateY(-1px); }
 .metric-label { color: #7b8799; font-size: 0.68rem; text-transform: none; letter-spacing: 0; font-weight: 600; }
-.metric-value { font-size: 1.45rem; color: #1f2a3d; }
+.metric-value { font-size: 1.32rem; color: #1f2a3d; line-height: 1.15; }
 .metric-sub { font-size: 0.7rem; }
 
 .panel { padding: 1.1rem 1rem; }
 .panel-header { margin-bottom: 1rem; }
-.panel-title h3 { color: #243148; font-size: 0.92rem; }
-.panel-title p { color: #8490a2; font-size: 0.72rem; }
+.panel-title h3 { color: #243148; font-size: 0.88rem; line-height: 1.25; }
+.panel-title p { color: #8490a2; font-size: 0.7rem; line-height: 1.3; }
 
 .btn-primary { background: #2f5bd3; border-radius: 7px; }
 .btn-primary:hover { background: #244bb5; }
@@ -1124,9 +1145,23 @@ td { color: #334155; padding: 0.72rem 0.9rem; }
 .user-profile-widget { background: #0e1624; border-top-color: #202b3d; }
 .avatar-circle { background: #2f5bd3; color: #ffffff; border: 0; }
 
+.brand-title h2 { font-size: 0.94rem; }
+.brand-title span { font-size: 0.58rem; }
+.nav-item { font-size: 0.76rem; }
+.nav-group-label { font-size: 0.6rem; }
+.user-meta h4 { font-size: 0.74rem; }
+.user-meta span { font-size: 0.62rem; }
+
 @media (max-width: 1100px) {
   .sidebar { width: 220px; }
   .view-body { padding: 1.4rem 1.25rem; }
+}
+
+@media (max-width: 900px) {
+  .page-title { max-width: 300px; }
+  .page-title h1 { font-size: 0.94rem; }
+  .topbar-right { gap: 0.45rem; }
+  .shift-badge, .toast-badge { font-size: 0.68rem; padding: 0.3rem 0.55rem; }
 }
 
 /* Enterprise icon language: consistent weight, scale and optical alignment */
