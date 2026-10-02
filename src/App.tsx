@@ -848,6 +848,16 @@ function CrmFoundationView({ parties, invoices, userRole, showToast, onNavigate 
     window.addEventListener("popstate", handleCrmPopState);
     return () => window.removeEventListener("popstate", handleCrmPopState);
   }, []);
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedLead(null);
+        setShowLeadForm(false);
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, []);
   const [query, setQuery] = useState("");
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [leadDraft, setLeadDraft] = useState({ company: "", city: "", product: "", value: "", source: "Referral" });
