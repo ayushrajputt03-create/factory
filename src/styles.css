@@ -88,6 +88,23 @@ code {
   min-height: 100vh;
 }
 
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text-main);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-180%);
+  transition: transform 0.18s ease;
+}
+
+.skip-link:focus { transform: translateY(0); }
+
 /* Sidebar - Blueprint Spec Section 2.1 */
 .sidebar {
   width: 240px;
@@ -311,6 +328,15 @@ code {
 .topbar-left { min-width: 0; flex: 1; }
 .topbar-right { flex: 0 0 auto; max-width: 57%; }
 .topbar-right .toast-badge { max-width: 220px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 @media (max-width: 1180px) {
   .crm-kpis { grid-template-columns: repeat(3, minmax(145px, 1fr)); }

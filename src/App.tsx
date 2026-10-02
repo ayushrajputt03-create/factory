@@ -500,6 +500,7 @@ export default function App() {
   return (
 
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="plant-brand">
@@ -581,7 +582,7 @@ export default function App() {
       </aside>
 
       {/* Main Workspace */}
-      <main className="workspace">
+      <main className="workspace" id="main-content">
         {/* Topbar */}
         <header className="topbar">
           <div className="topbar-left">
@@ -1092,7 +1093,7 @@ function DashboardView({
           <div className="metric-data">
             <span className="metric-label">Open Work Orders</span>
             <span className="metric-value">{openWorkOrders}</span>
-            <span className="metric-sub">{overdueWO > 0 ? `⚠ ${overdueWO} overdue` : "All on schedule"}</span>
+            <span className="metric-sub">{overdueWO > 0 ? `${overdueWO} overdue` : "All on schedule"}</span>
           </div>
         </div>
 
@@ -1103,7 +1104,7 @@ function DashboardView({
           <div className="metric-data">
             <span className="metric-label">Machine Status</span>
             <span className="metric-value">{runningMachines} <small style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>/ {machines.length}</small></span>
-            <span className="metric-sub">{breakdownMachines > 0 ? `🔴 ${breakdownMachines} breakdown · ${idleMachines} idle` : `${idleMachines} idle · All healthy`}</span>
+            <span className="metric-sub">{breakdownMachines > 0 ? `${breakdownMachines} breakdown · ${idleMachines} idle` : `${idleMachines} idle · All healthy`}</span>
           </div>
         </div>
 
@@ -1211,7 +1212,7 @@ function DashboardView({
               )}
               {m.status === "Breakdown" && (
                 <div style={{ fontSize: "0.74rem", color: "var(--status-red)", fontWeight: 700, marginTop: "0.25rem" }}>
-                  ⚠ Breakdown — needs immediate attention
+                  Breakdown — needs immediate attention
                 </div>
               )}
             </div>
