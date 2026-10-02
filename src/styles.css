@@ -1259,6 +1259,10 @@ body { background: #f4f7fb; }
 .sidebar nav { gap: 0.05rem; padding-top: 0.5rem; }
 .nav-group-label { padding-top: 0.65rem; padding-bottom: 0.2rem; }
 .nav-item { min-height: 36px; font-size: 0.74rem; }
+.nav-more-toggle { display: flex; align-items: center; gap: 0.55rem; width: calc(100% - 1.1rem); min-height: 36px; margin: 0 0.55rem; padding: 0.45rem 0.75rem; border: 0; border-radius: 8px; color: #8e9db5; background: transparent; font-size: 0.72rem; font-weight: 700; cursor: pointer; }
+.nav-more-toggle:hover { color: #ffffff; background: #1b2940; }
+.nav-more-toggle svg:last-child { margin-left: auto; transition: transform 0.15s ease; }
+.nav-more-toggle svg.rotated { transform: rotate(90deg); }
 .topbar { height: 70px; padding: 0 1.5rem; }
 .view-body { max-width: 1320px; padding: 1.5rem; gap: 1rem; }
 .metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem; }

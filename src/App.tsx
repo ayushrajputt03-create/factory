@@ -126,6 +126,7 @@ import {
 
 export default function App() {
   const [view, setView] = useState<View>("dashboard");
+  const [showMoreNav, setShowMoreNav] = useState(false);
   const [userRole, setUserRole] = useState<"owner" | "supervisor" | "ca">("owner");
   const [materials, setMaterials] = useState<Material[]>(initialMaterials);
   const [products, setProducts] = useState<Product[]>(initialProducts);
@@ -521,17 +522,17 @@ export default function App() {
             <Cpu size={18} />
             <span>Production Board</span>
           </button>
-          <button className={`nav-item ${view === "work_orders" ? "active" : ""}`} onClick={() => setView("work_orders")}>
-            <ClipboardList size={18} />
-            <span>Work Orders</span>
-          </button>
-          <button className={`nav-item ${view === "machines" ? "active" : ""}`} onClick={() => setView("machines")}>
-            <Wrench size={18} />
-            <span>Machines & Maintenance</span>
-            {machines.filter((m) => m.status === "Breakdown").length > 0 && (
-              <span className="nav-badge">{machines.filter((m) => m.status === "Breakdown").length} Down</span>
-            )}
-          </button>
+          {showMoreNav && <>
+            <button className={`nav-item ${view === "work_orders" ? "active" : ""}`} onClick={() => setView("work_orders")}>
+              <ClipboardList size={18} />
+              <span>Work Orders</span>
+            </button>
+            <button className={`nav-item ${view === "machines" ? "active" : ""}`} onClick={() => setView("machines")}>
+              <Wrench size={18} />
+              <span>Machines & Maintenance</span>
+              {machines.filter((m) => m.status === "Breakdown").length > 0 && <span className="nav-badge">{machines.filter((m) => m.status === "Breakdown").length} Down</span>}
+            </button>
+          </>}
 
           <div className="nav-group-label">CONTROL</div>
           <button className={`nav-item ${view === "inventory" ? "active" : ""}`} onClick={() => setView("inventory")}>
@@ -539,18 +540,12 @@ export default function App() {
             <span>Inventory</span>
             {lowStockMaterials.length > 0 && <span className="nav-badge">{lowStockMaterials.length} Low</span>}
           </button>
-          <button className={`nav-item ${view === "qc" ? "active" : ""}`} onClick={() => setView("qc")}>
-            <ShieldAlert size={18} />
-            <span>Quality Control</span>
-          </button>
+          {showMoreNav && <button className={`nav-item ${view === "qc" ? "active" : ""}`} onClick={() => setView("qc")}><ShieldAlert size={18} /><span>Quality Control</span></button>}
           <button className={`nav-item ${view === "dispatch" ? "active" : ""}`} onClick={() => setView("dispatch")}>
             <Truck size={18} />
             <span>Dispatch & Logistics</span>
           </button>
-          <button className={`nav-item ${view === "bom" ? "active" : ""}`} onClick={() => setView("bom")}>
-            <Layers3 size={18} />
-            <span>BOM & Recipes</span>
-          </button>
+          {showMoreNav && <button className={`nav-item ${view === "bom" ? "active" : ""}`} onClick={() => setView("bom")}><Layers3 size={18} /><span>BOM & Recipes</span></button>}
 
           <div className="nav-group-label">ADMINISTRATION</div>
           <button className={`nav-item ${view === "clients" ? "active" : ""}`} onClick={() => setView("clients")}>
@@ -570,20 +565,10 @@ export default function App() {
             <WalletCards size={18} />
             <span>Accounts & Finance</span>
           </button>
-          <button className={`nav-item ${view === "reports" ? "active" : ""}`} onClick={() => setView("reports")}>
-            <BarChart3 size={18} />
-            <span>Production Reports</span>
-          </button>
-          <button className={`nav-item ${view === "notices" ? "active" : ""}`} onClick={() => setView("notices")}>
-            <Bell size={18} />
-            <span>Plant Bulletins</span>
-          </button>
+          {showMoreNav && <><button className={`nav-item ${view === "reports" ? "active" : ""}`} onClick={() => setView("reports")}><BarChart3 size={18} /><span>Production Reports</span></button><button className={`nav-item ${view === "notices" ? "active" : ""}`} onClick={() => setView("notices")}><Bell size={18} /><span>Plant Bulletins</span></button></>}
 
-          <div className="nav-group-label">SYSTEM</div>
-          <button className={`nav-item ${view === "setup" ? "active" : ""}`} onClick={() => setView("setup")}>
-            <Settings size={18} />
-            <span>Setup & Masters</span>
-          </button>
+          <button className="nav-more-toggle" onClick={() => setShowMoreNav((current) => !current)}><MoreHorizontal size={17} /><span>{showMoreNav ? "Show less" : "More modules"}</span><ChevronRight size={14} className={showMoreNav ? "rotated" : ""} /></button>
+          {showMoreNav && <><div className="nav-group-label">SYSTEM</div><button className={`nav-item ${view === "setup" ? "active" : ""}`} onClick={() => setView("setup")}><Settings size={18} /><span>Setup & Masters</span></button></>}
         </nav>
 
         <div className="user-profile-widget">
