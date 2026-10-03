@@ -156,7 +156,7 @@ export type Employee = {
   id: string;
   name: string;
   role: "Owner" | "Plant Manager" | "Supervisor" | "Operator" | "Storekeeper" | "QC Inspector" | "Accountant" | "Logistics";
-  assignedShift: Shift;
+  assignedShift: Shift | string;
   attendanceStatus: "Present" | "Absent" | "On Leave";
   phone: string;
 };

@@ -34,6 +34,7 @@ import {
   ShieldAlert,
   ShoppingBag,
   UserCheck,
+  UserRoundCog,
   FileText,
   WalletCards,
   Landmark,
@@ -72,6 +73,7 @@ import type {
   Dispatch,
   Expense,
   ExpenseCategory,
+  Employee,
   InteractionType,
   Invoice,
   InvoiceStatus,
@@ -109,7 +111,8 @@ type View =
   | "accounts"
   | "reports"
   | "notices"
-  | "setup";
+  | "setup"
+  | "hr";
 
 const rupee = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -125,7 +128,7 @@ const viewFromPath = (path: string): View => {
   if (path.startsWith("/accounts")) return "accounts";
   if (path.startsWith("/crm")) return "crm";
   const value = path.replace(/^\//, "").split("/").filter(Boolean).join("_");
-  const supported: View[] = ["dashboard", "entry", "work_orders", "machines", "inventory", "qc", "dispatch", "bom", "billing", "clients", "crm", "accounts", "reports", "notices", "setup"];
+  const supported: View[] = ["dashboard", "entry", "work_orders", "machines", "inventory", "qc", "dispatch", "bom", "billing", "clients", "crm", "accounts", "reports", "notices", "setup", "hr"];
   return supported.includes(value as View) ? value as View : "dashboard";
 };
 
@@ -192,6 +195,7 @@ export default function App() {
       reports: "Production Reports",
       notices: "Plant Bulletins",
       setup: "Setup & Masters",
+      hr: "People & HR",
     };
     document.title = `${labels[view] ?? "Factory OS"} · Factory OS`;
   }, [view]);
@@ -630,6 +634,10 @@ export default function App() {
             <WalletCards size={18} />
             <span>Accounts & Finance</span>
           </button>
+          <button className={`nav-item ${view === "hr" ? "active" : ""}`} onClick={() => setView("hr")}>
+            <UserRoundCog size={18} />
+            <span>People & HR</span>
+          </button>
           {showMoreNav && <><button className={`nav-item ${view === "reports" ? "active" : ""}`} onClick={() => setView("reports")}><BarChart3 size={18} /><span>Production Reports</span></button><button className={`nav-item ${view === "notices" ? "active" : ""}`} onClick={() => setView("notices")}><Bell size={18} /><span>Plant Bulletins</span></button></>}
 
           <button className="nav-more-toggle" onClick={() => setShowMoreNav((current) => !current)}><MoreHorizontal size={17} /><span>{showMoreNav ? "Show less" : "More modules"}</span><ChevronRight size={14} className={showMoreNav ? "rotated" : ""} /></button>
@@ -663,6 +671,7 @@ export default function App() {
                 {view === "clients" && "Party Directory & Ledger Balances"}
                 {view === "crm" && "CRM · Sales Pipeline & Customer Growth"}
                 {view === "accounts" && "Accounts & Finance Control Center"}
+                {view === "hr" && "People, Attendance & Payroll Center"}
                 {view === "dispatch" && "Logistics, Shipments & Fleet Tracker"}
                 {view === "reports" && "Operational & Material Consumption Reports"}
                 {view === "notices" && "Plant Bulletins & Quality Circulars"}
@@ -829,6 +838,8 @@ export default function App() {
             />
           )}
 
+          {view === "hr" && <HrView showToast={showToast} />}
+
           {view === "dispatch" && (
             <DispatchView
               dispatches={dispatches}
@@ -880,6 +891,27 @@ export default function App() {
 }
 
 type CrmLead = { id: string; company: string; city: string; source: string; product: string; value: number; stage: string; temperature: string; owner: string };
+
+function HrView({ showToast }: { showToast: (message: string) => void }) {
+  const seeded: Employee[] = [
+    { id: "emp-1", name: "Ravi Kumar", role: "Supervisor", assignedShift: "Morning (08:00 - 16:00)", attendanceStatus: "Present", phone: "9829012345" },
+    { id: "emp-2", name: "Mohan Lal", role: "Operator", assignedShift: "Morning (08:00 - 16:00)", attendanceStatus: "Present", phone: "9876543210" },
+    { id: "emp-3", name: "Neha Sharma", role: "Accountant", assignedShift: "Morning (08:00 - 16:00)", attendanceStatus: "On Leave", phone: "9812345678" },
+    { id: "emp-4", name: "Imran Khan", role: "Storekeeper", assignedShift: "Evening (16:00 - 00:00)", attendanceStatus: "Absent", phone: "9797979797" },
+  ];
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    try { const saved = window.localStorage.getItem("factory-os-employees"); return saved ? JSON.parse(saved) : seeded; } catch { return seeded; }
+  });
+  const [query, setQuery] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [draft, setDraft] = useState<{ name: string; role: Employee["role"]; phone: string; assignedShift: string }>({ name: "", role: "Operator", phone: "", assignedShift: "Morning (08:00 - 16:00)" });
+  useEffect(() => { window.localStorage.setItem("factory-os-employees", JSON.stringify(employees)); }, [employees]);
+  const filtered = employees.filter((employee) => `${employee.name} ${employee.role} ${employee.phone}`.toLowerCase().includes(query.toLowerCase()));
+  const present = employees.filter((employee) => employee.attendanceStatus === "Present").length;
+  const onLeave = employees.filter((employee) => employee.attendanceStatus === "On Leave").length;
+  return <div className="accounts-module"><div className="accounts-header"><div><div className="eyebrow">PEOPLE OPERATIONS · FY 2026–27</div><h2>People & HR</h2><p>Employee master, daily attendance, leave and payroll readiness in one place.</p></div><button className="btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add employee</button></div><div className="finance-kpi-grid"><FinanceKpi label="Total employees" value={String(employees.length)} detail="Active workforce" tone="blue" icon={<Users size={18} />} /><FinanceKpi label="Present today" value={`${present}/${employees.length}`} detail="Attendance marked" tone="green" icon={<CheckCircle size={18} />} /><FinanceKpi label="On leave" value={String(onLeave)} detail="Requires coverage" tone="orange" icon={<Clock size={18} />} /><FinanceKpi label="Payroll status" value="Ready" detail="Review before payout" tone="purple" icon={<WalletCards size={18} />} /></div><div className="accounts-tabs" role="tablist"><button className="active" role="tab" aria-selected="true">Employee master</button><button role="tab" aria-selected="false" onClick={() => showToast("Attendance workspace ready")}>Attendance</button><button role="tab" aria-selected="false" onClick={() => showToast("Leave workspace ready")}>Leave requests</button><button role="tab" aria-selected="false" onClick={() => showToast("Payroll workspace ready")}>Payroll</button></div><section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>Employee directory</h3><p>Mark attendance and keep workforce details current.</p></div><div className="finance-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search employee, role or phone" /></div></div><div className="table-container">{filtered.length === 0 ? <div className="empty-state"><Users size={20} /><strong>No employees found</strong><p>Try another search or add a new employee.</p></div> : <table><thead><tr><th>Employee</th><th>Role</th><th>Shift</th><th>Phone</th><th>Attendance</th><th>Action</th></tr></thead><tbody>{filtered.map((employee) => <tr key={employee.id}><td><strong>{employee.name}</strong><small className="table-sub">{employee.id}</small></td><td>{employee.role}</td><td style={{ textTransform: "capitalize" }}>{employee.assignedShift}</td><td>{employee.phone}</td><td><span className={`badge badge-${employee.attendanceStatus === "Present" ? "success" : employee.attendanceStatus === "Absent" ? "danger" : "warning"}`}>{employee.attendanceStatus}</span></td><td><button className="btn-outline btn-sm" onClick={() => setEmployees((current) => current.map((item) => item.id === employee.id ? { ...item, attendanceStatus: item.attendanceStatus === "Present" ? "Absent" : "Present" } : item))}>Mark {employee.attendanceStatus === "Present" ? "absent" : "present"}</button></td></tr>)}</tbody></table>}</div></section>{showAdd && <><button className="drawer-scrim" aria-label="Close employee form" onClick={() => setShowAdd(false)} /><section className="lead-form-modal" role="dialog" aria-modal="true" aria-labelledby="employee-form-title"><div className="detail-drawer-header"><div><span className="eyebrow">WORKFORCE MASTER</span><h3 id="employee-form-title">Add employee</h3><p>Create an employee profile for attendance and payroll.</p></div><button className="icon-button" aria-label="Close employee form" onClick={() => setShowAdd(false)}><X size={18} /></button></div><form className="lead-form-body" onSubmit={(event) => { event.preventDefault(); setEmployees((current) => [{ id: `emp-${Date.now()}`, name: draft.name, role: draft.role, assignedShift: draft.assignedShift, attendanceStatus: "Absent", phone: draft.phone }, ...current]); setDraft({ name: "", role: "Operator", phone: "", assignedShift: "morning" }); setShowAdd(false); showToast("Employee added"); }}><label>Full name<input required className="form-control" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Amit Singh" /></label><div className="form-two-col"><label>Role<select className="form-control" value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value as Employee["role"] })}><option>Operator</option><option>Supervisor</option><option>Storekeeper</option><option>QC Inspector</option><option>Accountant</option><option>Logistics</option></select></label><label>Shift<select className="form-control" value={draft.assignedShift} onChange={(event) => setDraft({ ...draft, assignedShift: event.target.value as Shift })}><option value="morning">Morning</option><option value="evening">Evening</option><option value="night">Night</option></select></label></div><label>Phone<input required pattern="[0-9]{10}" className="form-control" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} placeholder="10 digit mobile number" /></label><div className="modal-actions"><button type="button" className="btn-outline" onClick={() => setShowAdd(false)}>Cancel</button><button type="submit" className="btn-primary"><Plus size={16} /> Add employee</button></div></form></section></>}
+  </div>;
+}
 
 function CrmFoundationView({ parties, invoices, userRole, showToast, onNavigate }: { parties: Party[]; invoices: Invoice[]; userRole: "owner" | "supervisor" | "ca"; showToast: (message: string) => void; onNavigate: (view: View) => void }) {
   const crmTabFromPath = window.location.pathname.split("/")[2] || "dashboard";
