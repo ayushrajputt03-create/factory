@@ -430,6 +430,20 @@ export default function App() {
     showToast(`✓ Invoice ${invoiceNumber} created for ${party.name}`);
   };
 
+  const handleRecordPayment = (invoiceId: string, amount: number, mode: string) => {
+    const invoice = invoices.find((item) => item.id === invoiceId);
+    if (!invoice || !Number.isFinite(amount) || amount <= 0) return;
+    const paid = ledgerEntries.filter((entry) => entry.invoiceId === invoiceId && entry.type === "credit").reduce((sum, entry) => sum + entry.amount, 0);
+    const outstanding = invoice.total - paid;
+    if (amount > outstanding) {
+      showToast(`Payment cannot exceed outstanding ${rupee.format(outstanding)}`);
+      return;
+    }
+    setInvoices(invoices.map((item) => item.id === invoiceId ? { ...item, status: paid + amount >= invoice.total ? "paid" : "partially_paid" } : item));
+    setLedgerEntries([{ id: createId("le"), partyId: invoice.partyId, invoiceId, amount, type: "credit", date: today, note: `Payment received · ${mode}` }, ...ledgerEntries]);
+    showToast(`Payment recorded: ${rupee.format(amount)}`);
+  };
+
   // Handler: Create Dispatch
   const handleCreateDispatch = (form: {
     orderId: string;
@@ -810,6 +824,7 @@ export default function App() {
                 setExpenses(dataService.getExpenses());
                 showToast(`✓ Expense ₹${data.amount.toLocaleString("en-IN")} recorded under ${data.category}.`);
               }}
+              onRecordPayment={handleRecordPayment}
               showToast={showToast}
             />
           )}
@@ -959,6 +974,7 @@ function AccountsFinanceView({
   userRole,
   onNavigate,
   onAddExpense,
+  onRecordPayment,
   showToast,
 }: {
   invoices: Invoice[];
@@ -972,6 +988,7 @@ function AccountsFinanceView({
   userRole: "owner" | "supervisor" | "ca";
   onNavigate: (view: View) => void;
   onAddExpense: (data: { category: ExpenseCategory; amount: number; paidTo: string; expenseDate?: string; note?: string }) => void;
+  onRecordPayment: (invoiceId: string, amount: number, mode: string) => void;
   showToast: (message: string) => void;
 }) {
   const accountsSectionFromPath = window.location.pathname.split("/")[2] || "dashboard";
@@ -1141,7 +1158,7 @@ function AccountsFinanceView({
         </>
       )}
 
-      {section === "receivables" && <FinanceTable title="Sales & Receivables" subtitle="Invoices, payments received and customer ageing" invoices={filteredInvoices} parties={parties} query={query} setQuery={setQuery} onCreate={() => onNavigate("billing")} showToast={showToast} />}
+      {section === "receivables" && <FinanceTable title="Sales & Receivables" subtitle="Invoices, payments received and customer ageing" invoices={filteredInvoices} parties={parties} query={query} setQuery={setQuery} onCreate={() => onNavigate("billing")} showToast={showToast} ledgerEntries={ledgerEntries} onRecordPayment={onRecordPayment} />}
       {section === "payables" && <FinanceListSection title="Purchase & Payables" subtitle="Vendor bills, due dates and payment commitments" icon={<ShoppingBag size={20} />} rows={[["PB-1048", "Shree Polymers & Chemicals", "Raw material purchase", "₹48,600", "Due in 4 days", "Pending"], ["PB-1042", "Jaipur Power Corporation", "Electricity · September", "₹32,850", "Due in 8 days", "Approved"], ["PB-1039", "Porter Express Logistics", "Dispatch freight", "₹18,400", "Paid", "Paid"]]} onCreate={() => runAction("Purchase bill")} />}
       {section === "expenses" && (
         <section className="panel finance-table-section">
@@ -1383,7 +1400,11 @@ function FinanceKpi({ label, value, detail, tone, icon }: { label: string; value
   return <div className="finance-kpi"><div className={`finance-kpi-icon ${tone}`}>{icon}</div><div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div></div>;
 }
 
-function FinanceTable({ title, subtitle, invoices, parties, query, setQuery, onCreate, showToast }: { title: string; subtitle: string; invoices: Invoice[]; parties: Party[]; query: string; setQuery: (value: string) => void; onCreate: () => void; showToast: (message: string) => void }) {
+function FinanceTable({ title, subtitle, invoices, parties, query, setQuery, onCreate, showToast, ledgerEntries, onRecordPayment }: { title: string; subtitle: string; invoices: Invoice[]; parties: Party[]; query: string; setQuery: (value: string) => void; onCreate: () => void; showToast: (message: string) => void; ledgerEntries: LedgerEntry[]; onRecordPayment: (invoiceId: string, amount: number, mode: string) => void }) {
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMode, setPaymentMode] = useState("UPI");
+  const selectedPaid = selectedInvoice ? ledgerEntries.filter((entry) => entry.invoiceId === selectedInvoice.id && entry.type === "credit").reduce((sum, entry) => sum + entry.amount, 0) : 0;
   const exportInvoices = () => {
     const rows = [["Invoice", "Customer", "Created", "Amount", "Due Date", "Status"], ...invoices.map((invoice) => [invoice.invoiceNumber, parties.find((party) => party.id === invoice.partyId)?.name ?? "Unknown party", invoice.createdAt, String(invoice.total), invoice.dueDate, invoice.status])];
     const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n");
@@ -1393,7 +1414,8 @@ function FinanceTable({ title, subtitle, invoices, parties, query, setQuery, onC
     link.click();
     showToast(`${invoices.length} invoices exported`);
   };
-  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>{title}</h3><p>{subtitle}</p></div><button className="btn-primary" onClick={onCreate}><Plus size={16} /> Create sales invoice</button></div><div className="finance-toolbar"><div className="finance-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search invoice, customer or amount" /></div><button className="btn-outline" onClick={() => setQuery("")}><Filter size={14} /> Clear filter</button><button className="btn-outline" onClick={exportInvoices}><Download size={14} /> Export</button></div><div className="table-container">{invoices.length === 0 ? <div className="empty-state"><Search size={20} /><strong>No invoices found</strong><p>Try another search or clear the filter.</p><button className="btn-outline btn-sm" onClick={() => setQuery("")}>Clear filter</button></div> : <table><thead><tr><th>Invoice</th><th>Customer</th><th>Created</th><th>Amount</th><th>Due date</th><th>Status</th><th>Action</th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id}><td><strong>{invoice.invoiceNumber}</strong><small className="table-sub">{invoice.items.length} line items</small></td><td>{parties.find((party) => party.id === invoice.partyId)?.name ?? "Unknown party"}</td><td>{invoice.createdAt}</td><td><strong>{rupee.format(invoice.total)}</strong><small className="table-sub">Balance due</small></td><td>{invoice.dueDate}</td><td><span className={`badge badge-${invoice.status === "overdue" ? "danger" : invoice.status === "paid" ? "success" : "info"}`}>{invoice.status}</span></td><td><button className="icon-button" aria-label={`More actions for ${invoice.invoiceNumber}`}><MoreHorizontal size={16} /></button></td></tr>)}</tbody></table>}</div></section>;
+
+  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>{title}</h3><p>{subtitle}</p></div><button className="btn-primary" onClick={onCreate}><Plus size={16} /> Create sales invoice</button></div><div className="finance-toolbar"><div className="finance-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search invoice, customer or amount" /></div><button className="btn-outline" onClick={() => setQuery("")}><Filter size={14} /> Clear filter</button><button className="btn-outline" onClick={exportInvoices}><Download size={14} /> Export</button></div><div className="table-container">{invoices.length === 0 ? <div className="empty-state"><Search size={20} /><strong>No invoices found</strong><p>Try another search or clear the filter.</p><button className="btn-outline btn-sm" onClick={() => setQuery("")}>Clear filter</button></div> : <table><thead><tr><th>Invoice</th><th>Customer</th><th>Created</th><th>Amount</th><th>Due date</th><th>Status</th><th>Action</th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id} onClick={() => { setSelectedInvoice(invoice); setPaymentAmount(""); }}><td><strong>{invoice.invoiceNumber}</strong><small className="table-sub">{invoice.items.length} line items</small></td><td>{parties.find((party) => party.id === invoice.partyId)?.name ?? "Unknown party"}</td><td>{invoice.createdAt}</td><td><strong>{rupee.format(invoice.total)}</strong><small className="table-sub">Balance {rupee.format(invoice.total - ledgerEntries.filter((entry) => entry.invoiceId === invoice.id && entry.type === "credit").reduce((sum, entry) => sum + entry.amount, 0))}</small></td><td>{invoice.dueDate}</td><td><span className={`badge badge-${invoice.status === "overdue" ? "danger" : invoice.status === "paid" ? "success" : "info"}`}>{invoice.status}</span></td><td><button className="icon-button" aria-label={`Open ${invoice.invoiceNumber}`}><MoreHorizontal size={16} /></button></td></tr>)}</tbody></table>}</div>{selectedInvoice && <><button className="drawer-scrim" aria-label="Close invoice details" onClick={() => setSelectedInvoice(null)} /><aside className="detail-drawer" aria-label="Invoice details"><div className="detail-drawer-header"><div><span className="eyebrow">INVOICE DETAILS</span><h3>{selectedInvoice.invoiceNumber}</h3><p>{parties.find((party) => party.id === selectedInvoice.partyId)?.name ?? "Unknown customer"}</p></div><button className="icon-button" onClick={() => setSelectedInvoice(null)} aria-label="Close invoice details"><X size={18} /></button></div><div className="detail-drawer-body"><div className="drawer-value"><span>Outstanding balance</span><strong>{rupee.format(selectedInvoice.total - selectedPaid)}</strong></div><div className="drawer-detail-list"><div><span>Invoice total</span><strong>{rupee.format(selectedInvoice.total)}</strong></div><div><span>Paid to date</span><strong>{rupee.format(selectedPaid)}</strong></div><div><span>Due date</span><strong>{selectedInvoice.dueDate}</strong></div></div><div className="drawer-section"><h4>Record payment</h4><div className="form-two-col"><input className="form-control" type="number" min="1" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} placeholder="Amount" /><select className="form-control" value={paymentMode} onChange={(event) => setPaymentMode(event.target.value)}><option>UPI</option><option>Cash</option><option>Bank Transfer</option><option>Cheque</option></select></div><button className="btn-primary" style={{ marginTop: 12 }} disabled={selectedInvoice.total - selectedPaid <= 0} onClick={() => { onRecordPayment(selectedInvoice.id, Number(paymentAmount), paymentMode); setSelectedInvoice(null); }}><IndianRupee size={16} /> Record payment</button></div></div></aside></>}</section>;
 }
 
 function FinanceListSection({ title, subtitle, icon, rows, onCreate }: { title: string; subtitle: string; icon: React.ReactNode; rows: string[][]; onCreate: () => void }) {

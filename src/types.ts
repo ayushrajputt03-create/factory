@@ -4,7 +4,7 @@ export type PartyType = "Customer" | "Supplier";
 export type ClientCategory = "dealer" | "retailer" | "direct";
 export type ClientStatus = "lead" | "active" | "dormant" | "blocked";
 export type InteractionType = "call" | "visit" | "whatsapp" | "note";
-export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue";
+export type InvoiceStatus = "draft" | "sent" | "partially_paid" | "paid" | "overdue" | "cancelled";
 export type OrderStatus = "open" | "dispatched" | "in_transit" | "delivered";
 export type LedgerEntryType = "debit" | "credit";
 
@@ -260,3 +260,31 @@ export type PlantNotice = {
   date: string;
   issuedBy: string;
 };
+
+export type ExpenseCategory =
+  | "rent"
+  | "electricity"
+  | "maintenance"
+  | "raw_material"
+  | "salary"
+  | "other";
+
+export type Expense = {
+  id: string;
+  factoryId: string;
+  category: ExpenseCategory;
+  amount: number;
+  paidTo: string;
+  expenseDate: string;
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type AccountSummary = {
+  totalRevenue: number;
+  totalExpenses: number;
+  netPosition: number;
+  categoryBreakdown: Record<ExpenseCategory, number>;
+};
+
