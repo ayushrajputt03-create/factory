@@ -918,6 +918,7 @@ function HrView({ showToast }: { showToast: (message: string) => void }) {
 type HrLeave = { id: string; employeeId: string; type: string; from: string; to: string; reason: string; status: "Pending" | "Approved" | "Rejected" };
 
 function HrCompleteView({ showToast }: { showToast: (message: string) => void }) {
+  const factoryId = "factory-jaipur-01";
   const seedEmployees: Employee[] = [
     { id: "emp-1", name: "Ravi Kumar", role: "Supervisor", assignedShift: "Morning (08:00 - 16:00)", attendanceStatus: "Present", phone: "9829012345" },
     { id: "emp-2", name: "Mohan Lal", role: "Operator", assignedShift: "Morning (08:00 - 16:00)", attendanceStatus: "Present", phone: "9876543210" },
@@ -935,12 +936,12 @@ function HrCompleteView({ showToast }: { showToast: (message: string) => void })
   useEffect(() => { localStorage.setItem("factory-os-hr-leaves", JSON.stringify(leaves)); }, [leaves]);
   useEffect(() => {
     if (!realtimeDb || !isFirebaseConfigured || import.meta.env.VITE_DATA_MODE !== "firebase") return;
-    const unsubscribeEmployees = onValue(ref(realtimeDb, "factory-os/hr/employees"), (snapshot) => {
+    const unsubscribeEmployees = onValue(ref(realtimeDb, `factory-os/${factoryId}/hr/employees`), (snapshot) => {
       const remote = snapshot.val();
       if (remote) setEmployees(Object.values(remote) as Employee[]);
       realtimeHydrated.current = true;
     });
-    const unsubscribeLeaves = onValue(ref(realtimeDb, "factory-os/hr/leaveRequests"), (snapshot) => {
+    const unsubscribeLeaves = onValue(ref(realtimeDb, `factory-os/${factoryId}/hr/leaveRequests`), (snapshot) => {
       const remote = snapshot.val();
       if (remote) setLeaves(Object.values(remote) as HrLeave[]);
     });
@@ -948,11 +949,11 @@ function HrCompleteView({ showToast }: { showToast: (message: string) => void })
   }, []);
   useEffect(() => {
     if (!realtimeDb || !realtimeHydrated.current || import.meta.env.VITE_DATA_MODE !== "firebase") return;
-    void set(ref(realtimeDb, "factory-os/hr/employees"), Object.fromEntries(employees.map((employee) => [employee.id, employee])));
+    void set(ref(realtimeDb, `factory-os/${factoryId}/hr/employees`), Object.fromEntries(employees.map((employee) => [employee.id, employee])));
   }, [employees]);
   useEffect(() => {
     if (!realtimeDb || !realtimeHydrated.current || import.meta.env.VITE_DATA_MODE !== "firebase") return;
-    void set(ref(realtimeDb, "factory-os/hr/leaveRequests"), Object.fromEntries(leaves.map((leave) => [leave.id, leave])));
+    void set(ref(realtimeDb, `factory-os/${factoryId}/hr/leaveRequests`), Object.fromEntries(leaves.map((leave) => [leave.id, leave])));
   }, [leaves]);
   const filtered = employees.filter((employee) => `${employee.name} ${employee.role} ${employee.phone}`.toLowerCase().includes(query.toLowerCase()));
   const present = employees.filter((employee) => employee.attendanceStatus === "Present").length;
