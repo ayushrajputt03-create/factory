@@ -7,6 +7,9 @@ import type {
   ClientInteraction,
   ClientStatus,
   Dispatch,
+  Expense,
+  ExpenseCategory,
+  AccountSummary,
   InteractionType,
   Invoice,
   Machine,
@@ -183,6 +186,12 @@ export const dataService = {
     downtimeReason?: string;
     enteredBy?: string;
   }): { entry: ProductionEntry; movements: StockMovement[] } {
+    if (!Number.isFinite(entryData.quantityProduced) || entryData.quantityProduced <= 0) {
+      throw new Error("Produced quantity must be greater than zero");
+    }
+    if (!Number.isFinite(entryData.quantityRejected) || entryData.quantityRejected < 0 || entryData.quantityRejected > entryData.quantityProduced) {
+      throw new Error("Rejected quantity must be between zero and produced quantity");
+    }
     const products = mockStore.getProducts();
     const materials = mockStore.getMaterials();
     const activeBom = this.getActiveBom(entryData.productId);
@@ -527,6 +536,13 @@ export const dataService = {
     const mat = materials.find((m) => m.id === data.materialId);
     if (!mat) throw new Error("Material not found");
 
+    if (!Number.isFinite(data.quantity) || data.quantity <= 0) {
+      throw new Error("Stock quantity must be greater than zero");
+    }
+    if (data.type === "out" && data.quantity > mat.currentStock) {
+      throw new Error(`Insufficient stock for ${mat.name}`);
+    }
+
     const movement: StockMovement = {
       id: createId("sm"),
       materialId: mat.id,
@@ -540,7 +556,7 @@ export const dataService = {
     if (data.type === "in") {
       mat.currentStock = Number((mat.currentStock + data.quantity).toFixed(3));
     } else {
-      mat.currentStock = Number(Math.max(0, mat.currentStock - data.quantity).toFixed(3));
+      mat.currentStock = Number((mat.currentStock - data.quantity).toFixed(3));
     }
 
     mockStore.setMaterials([...materials]);
@@ -568,5 +584,83 @@ export const dataService = {
 
   getNotices(): PlantNotice[] {
     return mockStore.getNotices();
+  },
+
+  // ==========================================
+  // EXPENSES & INTERNAL ACCOUNTS (PHASE 2)
+  // ==========================================
+  getExpenses(): Expense[] {
+    // TODO: FIREBASE -> const snapshot = await getDocs(query(collection(db, "factories", factoryId, "expenses"), orderBy("expenseDate", "desc")));
+    // TODO: SUPABASE (later) -> const { data } = await supabase.from('expenses').select('*').order('expense_date', { ascending: false });
+    return mockStore.getExpenses();
+  },
+
+  addExpense(data: {
+    category: ExpenseCategory;
+    amount: number;
+    paidTo: string;
+    expenseDate?: string;
+    note?: string;
+    createdBy?: string;
+  }): Expense {
+    // TODO: FIREBASE -> await addDoc(collection(db, "factories", factoryId, "expenses"), { ...data, factoryId, createdAt: serverTimestamp() });
+    // TODO: SUPABASE (later) -> await supabase.from('expenses').insert([{ factory_id: factoryId, ...data }]);
+    const list = mockStore.getExpenses();
+    const cleanAmount = Number(data.amount);
+    if (!cleanAmount || cleanAmount <= 0) {
+      throw new Error("Expense amount must be greater than zero");
+    }
+    if (!data.paidTo?.trim()) {
+      throw new Error("Payee name (paidTo) is required");
+    }
+
+    const expense: Expense = {
+      id: createId("exp"),
+      factoryId: "factory-jaipur-01",
+      category: data.category,
+      amount: cleanAmount,
+      paidTo: data.paidTo.trim(),
+      expenseDate: data.expenseDate || today(),
+      note: data.note?.trim() || "",
+      createdBy: data.createdBy || "Owner / Accounts",
+      createdAt: nowIso(),
+    };
+
+    const updated = [expense, ...list];
+    mockStore.setExpenses(updated);
+    return expense;
+  },
+
+  getAccountSummary(): AccountSummary {
+    // "Never store what you can compute" — computed on read from Invoices + Expenses
+    const invoices = mockStore.getInvoices();
+    const expenses = mockStore.getExpenses();
+
+    const totalRevenue = invoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+    const totalExpenses = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+    const categoryBreakdown: Record<ExpenseCategory, number> = {
+      rent: 0,
+      electricity: 0,
+      maintenance: 0,
+      raw_material: 0,
+      salary: 0,
+      other: 0,
+    };
+
+    expenses.forEach((exp) => {
+      if (categoryBreakdown[exp.category] !== undefined) {
+        categoryBreakdown[exp.category] += exp.amount;
+      } else {
+        categoryBreakdown.other += exp.amount;
+      }
+    });
+
+    return {
+      totalRevenue,
+      totalExpenses,
+      netPosition: totalRevenue - totalExpenses,
+      categoryBreakdown,
+    };
   },
 };
