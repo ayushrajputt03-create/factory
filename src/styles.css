@@ -225,6 +225,8 @@ code {
   font-weight: 700;
 }
 
+.detail-drawer-actions { display: flex; align-items: center; gap: 8px; }
+
 /* Accounts & Finance module */
 .accounts-module { display: flex; flex-direction: column; gap: 1rem; }
 .accounts-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
