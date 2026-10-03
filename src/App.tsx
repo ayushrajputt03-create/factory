@@ -11,6 +11,7 @@ import {
   Bell,
   Plus,
   Search,
+  Check,
   CheckCircle,
   AlertTriangle,
   MessageCircle,
@@ -48,6 +49,7 @@ import { dataService } from "./lib/dataService";
 import {
   initialBoms,
   initialDispatches,
+  initialExpenses,
   initialInvoices,
   initialLedgerEntries,
   initialMaterials,
@@ -59,6 +61,7 @@ import {
   initialStockMovements,
 } from "./seed";
 import type {
+  AccountSummary,
   Bom,
   BomLineItem,
   BreakdownTicket,
@@ -67,6 +70,8 @@ import type {
   ClientInteraction,
   ClientStatus,
   Dispatch,
+  Expense,
+  ExpenseCategory,
   InteractionType,
   Invoice,
   InvoiceStatus,
@@ -151,6 +156,7 @@ export default function App() {
   const [breakdownTickets, setBreakdownTickets] = useState<BreakdownTicket[]>(() => dataService.getBreakdownTickets());
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(() => dataService.getWorkOrders());
   const [qcInspections, setQcInspections] = useState<QcInspection[]>(() => dataService.getQcInspections());
+  const [expenses, setExpenses] = useState<Expense[]>(() => dataService.getExpenses());
 
   const [toast, setToast] = useState<string>("Plant Online · Shift 1 Running");
   const setView = (nextView: View) => {
@@ -796,8 +802,14 @@ export default function App() {
               products={products}
               productionEntries={productionEntries}
               machines={machines}
+              expenses={expenses}
               userRole={userRole}
               onNavigate={setView}
+              onAddExpense={(data) => {
+                dataService.addExpense(data);
+                setExpenses(dataService.getExpenses());
+                showToast(`✓ Expense ₹${data.amount.toLocaleString("en-IN")} recorded under ${data.category}.`);
+              }}
               showToast={showToast}
             />
           )}
@@ -943,8 +955,10 @@ function AccountsFinanceView({
   products,
   productionEntries,
   machines,
+  expenses,
   userRole,
   onNavigate,
+  onAddExpense,
   showToast,
 }: {
   invoices: Invoice[];
@@ -954,8 +968,10 @@ function AccountsFinanceView({
   products: Product[];
   productionEntries: ProductionEntry[];
   machines: Machine[];
+  expenses: Expense[];
   userRole: "owner" | "supervisor" | "ca";
   onNavigate: (view: View) => void;
+  onAddExpense: (data: { category: ExpenseCategory; amount: number; paidTo: string; expenseDate?: string; note?: string }) => void;
   showToast: (message: string) => void;
 }) {
   const accountsSectionFromPath = window.location.pathname.split("/")[2] || "dashboard";
@@ -970,6 +986,10 @@ function AccountsFinanceView({
     return () => window.removeEventListener("popstate", handleAccountsPopState);
   }, []);
   const [query, setQuery] = useState("");
+  const [expCategoryFilter, setExpCategoryFilter] = useState("all");
+  const [expFormOpen, setExpFormOpen] = useState(false);
+  const [expDraft, setExpDraft] = useState({ category: "maintenance" as ExpenseCategory, amount: "", paidTo: "", expenseDate: "", note: "" });
+
   const receivables = parties
     .filter((party) => party.type === "Customer")
     .map((party) => ({
@@ -979,15 +999,33 @@ function AccountsFinanceView({
     .filter((item) => item.balance > 0);
   const totalReceivables = receivables.reduce((total, item) => total + item.balance, 0);
   const overdue = invoices.filter((invoice) => invoice.status === "overdue").reduce((total, invoice) => total + invoice.total, 0);
-  const totalRevenue = invoices.filter((invoice) => invoice.status === "paid" || invoice.status === "sent").reduce((total, invoice) => total + invoice.total, 0);
+  const totalRevenue = invoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+  const totalExpenseAmount = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+  const netPosition = totalRevenue - totalExpenseAmount;
+
+  // Category breakdown (computed, not stored)
+  const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
+    { value: "rent", label: "Rent" },
+    { value: "electricity", label: "Electricity" },
+    { value: "maintenance", label: "Maintenance" },
+    { value: "raw_material", label: "Raw Material" },
+    { value: "salary", label: "Salary & Wages" },
+    { value: "other", label: "Other" },
+  ];
+  const categoryBreakdown = EXPENSE_CATEGORIES.map((cat) => ({
+    ...cat,
+    total: expenses.filter((e) => e.category === cat.value).reduce((s, e) => s + e.amount, 0),
+  }));
+  const maxCategoryAmount = Math.max(...categoryBreakdown.map((c) => c.total), 1);
+
   const productionCost = productionEntries.reduce((total, entry) => total + entry.quantityProduced * 18, 0);
   const cashFlow = [
-    ["May", Math.round(totalRevenue * 0.58), Math.round((productionCost + 126000) * 0.48)],
-    ["Jun", Math.round(totalRevenue * 0.72), Math.round((productionCost + 126000) * 0.62)],
-    ["Jul", Math.round(totalRevenue * 0.51), Math.round((productionCost + 126000) * 0.56)],
-    ["Aug", Math.round(totalRevenue * 0.84), Math.round((productionCost + 126000) * 0.68)],
-    ["Sep", Math.round(totalRevenue * 0.66), Math.round((productionCost + 126000) * 0.74)],
-    ["Oct", totalRevenue, productionCost + 126000],
+    ["May", Math.round(totalRevenue * 0.58), Math.round(totalExpenseAmount * 0.48)],
+    ["Jun", Math.round(totalRevenue * 0.72), Math.round(totalExpenseAmount * 0.62)],
+    ["Jul", Math.round(totalRevenue * 0.51), Math.round(totalExpenseAmount * 0.56)],
+    ["Aug", Math.round(totalRevenue * 0.84), Math.round(totalExpenseAmount * 0.68)],
+    ["Sep", Math.round(totalRevenue * 0.66), Math.round(totalExpenseAmount * 0.74)],
+    ["Oct", totalRevenue, totalExpenseAmount],
   ];
   const cashFlowMax = Math.max(...cashFlow.map(([, received, paid]) => Math.max(Number(received), Number(paid))), 1);
   const payableEstimate = materials.reduce((total, material) => total + Math.max(0, material.lowStockThreshold - material.currentStock) * material.unitCost, 0) + 185000;
@@ -995,6 +1033,33 @@ function AccountsFinanceView({
     const party = parties.find((item) => item.id === invoice.partyId);
     return `${invoice.invoiceNumber} ${party?.name ?? ""}`.toLowerCase().includes(query.toLowerCase());
   });
+  const filteredExpenses = expenses.filter((exp) => {
+    const matchCategory = expCategoryFilter === "all" || exp.category === expCategoryFilter;
+    const matchQuery = !query || `${exp.paidTo} ${exp.note || ""} ${exp.category}`.toLowerCase().includes(query.toLowerCase());
+    return matchCategory && matchQuery;
+  });
+
+  const exportExpensesCsv = () => {
+    const rows = [
+      ["Date", "Category", "Paid To", "Amount", "Note", "Recorded By"],
+      ...filteredExpenses.map((e) => [
+        e.expenseDate,
+        e.category,
+        e.paidTo,
+        String(e.amount),
+        e.note || "",
+        e.createdBy,
+      ]),
+    ];
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `factory-os-expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`✓ ${filteredExpenses.length} expense records exported to CSV.`);
+  };
   const tabs = [
     ["dashboard", "Accounts Dashboard"],
     ["receivables", "Sales & Receivables"],
@@ -1036,18 +1101,30 @@ function AccountsFinanceView({
             <FinanceKpi label="Total receivables" value={rupee.format(totalReceivables)} detail={`${rupee.format(overdue)} overdue`} tone="blue" icon={<ArrowUpRight size={19} />} />
             <FinanceKpi label="Total payables" value={rupee.format(payableEstimate)} detail="3 bills due this week" tone="orange" icon={<ArrowDownRight size={19} />} />
             <FinanceKpi label="Cash & bank balance" value={rupee.format(864500)} detail="Updated 10 minutes ago" tone="green" icon={<Landmark size={19} />} />
-            <FinanceKpi label="This month revenue" value={rupee.format(totalRevenue)} detail="↑ 12.4% vs last month" tone="purple" icon={<TrendingUp size={19} />} />
-            <FinanceKpi label="This month expense" value={rupee.format(productionCost + 126000)} detail="Materials · payroll · freight" tone="red" icon={<ReceiptText size={19} />} />
-            <FinanceKpi label="Net profit estimate" value={rupee.format(Math.max(0, totalRevenue - productionCost - 126000))} detail="Revenue minus direct costs" tone="teal" icon={<IndianRupee size={19} />} />
+            <FinanceKpi label="Total revenue" value={rupee.format(totalRevenue)} detail="Invoiced sales total" tone="purple" icon={<TrendingUp size={19} />} />
+            <FinanceKpi label="Total factory expenses" value={rupee.format(totalExpenseAmount)} detail={`${expenses.length} tracked expenses`} tone="red" icon={<ReceiptText size={19} />} />
+            <FinanceKpi label="Net financial position" value={rupee.format(netPosition)} detail={netPosition >= 0 ? "Revenue exceeds expenses" : "Deficit position"} tone={netPosition >= 0 ? "teal" : "red"} icon={<IndianRupee size={19} />} />
           </div>
 
           <div className="finance-layout-main">
             <section className="panel finance-chart-panel">
-              <div className="panel-header"><div className="panel-title"><h3>Receivables ageing</h3><p>Outstanding customer balances by payment age</p></div><button className="btn-outline btn-sm" onClick={() => setSection("receivables")}><Filter size={14} /> View report</button></div>
+              <div className="panel-header"><div className="panel-title"><h3>Expense breakdown</h3><p>Internal factory spending by category</p></div><button className="btn-outline btn-sm" onClick={() => setSection("expenses")}><Filter size={14} /> View expense log</button></div>
               <div className="ageing-list">
-                {[['Current', 46, 'var(--status-green)'], ['1–30 days', 28, 'var(--status-blue)'], ['31–60 days', 16, 'var(--status-orange)'], ['60+ days', 10, 'var(--status-red)']].map(([label, percent, color]) => (
-                  <div className="ageing-row" key={String(label)}><div><span>{label}</span><strong>{rupee.format(totalReceivables * Number(percent) / 100)}</strong></div><div className="ageing-track"><span style={{ width: `${percent}%`, background: color }} /></div></div>
-                ))}
+                {categoryBreakdown.map((cat) => {
+                  const percent = totalExpenseAmount > 0 ? Math.round((cat.total / totalExpenseAmount) * 100) : 0;
+                  const catColor = cat.value === "rent" ? "#3b82f6" : cat.value === "electricity" ? "#f59e0b" : cat.value === "raw_material" ? "#10b981" : cat.value === "salary" ? "#8b5cf6" : cat.value === "maintenance" ? "#ef4444" : "#64748b";
+                  return (
+                    <div className="ageing-row" key={cat.value}>
+                      <div>
+                        <span>{cat.label}</span>
+                        <strong>{rupee.format(cat.total)} <small style={{ fontWeight: "normal", color: "var(--text-muted, #64748b)" }}>({percent}%)</small></strong>
+                      </div>
+                      <div className="ageing-track">
+                        <span style={{ width: `${Math.max(3, (cat.total / maxCategoryAmount) * 100)}%`, background: catColor }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </section>
             <section className="panel finance-chart-panel">
@@ -1057,22 +1134,246 @@ function AccountsFinanceView({
           </div>
 
           <div className="finance-layout-three">
-            <section className="panel"><div className="panel-header"><div className="panel-title"><h3>Quick finance actions</h3><p>Common accounting workflows</p></div></div><div className="finance-actions">{[["Create sales invoice", <ReceiptText size={17} />, "billing"], ["Record payment received", <IndianRupee size={17} />, "receivables"], ["Add expense", <FileText size={17} />, "expenses"], ["Transfer cash to bank", <Landmark size={17} />, "cash"], ["Export financial summary", <FileSpreadsheet size={17} />, "reports"]].map(([label, icon, target]) => <button key={String(label)} onClick={() => target === "billing" ? onNavigate("billing") : setSection(String(target))}><span className="action-icon">{icon}</span>{label}</button>)}</div></section>
+            <section className="panel"><div className="panel-header"><div className="panel-title"><h3>Quick finance actions</h3><p>Common accounting workflows</p></div></div><div className="finance-actions">{[["Create sales invoice", <ReceiptText size={17} />, "billing"], ["Record payment received", <IndianRupee size={17} />, "receivables"], ["Add factory expense", <FileText size={17} />, "expenses"], ["Transfer cash to bank", <Landmark size={17} />, "cash"], ["Export financial summary", <FileSpreadsheet size={17} />, "reports"]].map(([label, icon, target]) => <button key={String(label)} onClick={() => target === "billing" ? onNavigate("billing") : setSection(String(target))}><span className="action-icon">{icon}</span>{label}</button>)}</div></section>
             <section className="panel"><div className="panel-header"><div className="panel-title"><h3>Pending approvals</h3><p>Finance actions needing attention</p></div><span className="badge badge-warning">4 pending</span></div><div className="approval-list"><div><span className="status-dot orange" />Purchase bill <strong>PB-1048</strong><small>₹48,600 · Raw material</small></div><div><span className="status-dot orange" />Expense claim <strong>EXP-238</strong><small>₹12,400 · Maintenance</small></div><div><span className="status-dot blue" />Bank reconciliation <strong>HDFC · Sep</strong><small>₹2,850 difference</small></div></div></section>
             <section className="panel"><div className="panel-header"><div className="panel-title"><h3>Top outstanding</h3><p>Customers to follow up today</p></div><button className="btn-outline btn-sm" onClick={() => onNavigate("clients")}>Open CRM</button></div><div className="outstanding-list">{receivables.slice(0, 5).map(({ party, balance }) => <div key={party.id}><span className="mini-avatar">{party.name.slice(0, 2).toUpperCase()}</span><span>{party.name}<small>{party.city}</small></span><strong>{rupee.format(balance)}</strong></div>)}</div></section>
           </div>
         </>
       )}
 
-      {section === "receivables" && <FinanceTable title="Sales & Receivables" subtitle="Invoices, payments received and customer ageing" invoices={filteredInvoices} parties={parties} query={query} setQuery={setQuery} onCreate={() => onNavigate("billing")} />}
+      {section === "receivables" && <FinanceTable title="Sales & Receivables" subtitle="Invoices, payments received and customer ageing" invoices={filteredInvoices} parties={parties} query={query} setQuery={setQuery} onCreate={() => onNavigate("billing")} showToast={showToast} />}
       {section === "payables" && <FinanceListSection title="Purchase & Payables" subtitle="Vendor bills, due dates and payment commitments" icon={<ShoppingBag size={20} />} rows={[["PB-1048", "Shree Polymers & Chemicals", "Raw material purchase", "₹48,600", "Due in 4 days", "Pending"], ["PB-1042", "Jaipur Power Corporation", "Electricity · September", "₹32,850", "Due in 8 days", "Approved"], ["PB-1039", "Porter Express Logistics", "Dispatch freight", "₹18,400", "Paid", "Paid"]]} onCreate={() => runAction("Purchase bill")} />}
-      {section === "expenses" && <FinanceListSection title="Expense Management" subtitle="Track, approve and control every factory expense" icon={<ReceiptText size={20} />} rows={[["EXP-238", "Machine Maintenance", "Hydraulic oil & service", "₹12,400", "Today", "Pending Approval"], ["EXP-237", "Transport", "Local dispatch freight", "₹8,200", "Yesterday", "Approved"], ["EXP-236", "Packaging", "Cartons and labels", "₹18,650", "30 Sep", "Paid"]]} onCreate={() => runAction("Expense")} />}
+      {section === "expenses" && (
+        <section className="panel finance-table-section">
+          <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
+            <div className="panel-title">
+              <h3>Internal Factory Expenses</h3>
+              <p>Direct tracking of money going OUT — rent, power, repairs, material & wages</p>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button className="btn-outline btn-sm" onClick={exportExpensesCsv}>
+                <Download size={15} /> Export CSV
+              </button>
+              <button className="btn-primary btn-sm" onClick={() => setExpFormOpen(!expFormOpen)}>
+                <Plus size={15} /> {expFormOpen ? "Close Form" : "Add Expense"}
+              </button>
+            </div>
+          </div>
+
+          {/* Inline Quick-Entry Expense Form */}
+          {expFormOpen && (
+            <div style={{ background: "var(--bg-subtle, #f8fafc)", border: "1px solid var(--border-color, #e2e8f0)", borderRadius: "8px", padding: "1rem", margin: "1rem 0" }}>
+              <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem", fontWeight: 600 }}>Record Factory Expense</h4>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, marginBottom: "0.25rem", color: "var(--text-muted, #64748b)" }}>CATEGORY *</label>
+                  <select
+                    className="form-control"
+                    style={{ width: "100%", padding: "0.45rem 0.6rem", borderRadius: "6px", border: "1px solid var(--border-color, #cbd5e1)" }}
+                    value={expDraft.category}
+                    onChange={(e) => setExpDraft({ ...expDraft, category: e.target.value as ExpenseCategory })}
+                  >
+                    {EXPENSE_CATEGORIES.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, marginBottom: "0.25rem", color: "var(--text-muted, #64748b)" }}>AMOUNT (₹) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="form-control"
+                    placeholder="e.g. 15000"
+                    style={{ width: "100%", padding: "0.45rem 0.6rem", borderRadius: "6px", border: "1px solid var(--border-color, #cbd5e1)" }}
+                    value={expDraft.amount}
+                    onChange={(e) => setExpDraft({ ...expDraft, amount: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, marginBottom: "0.25rem", color: "var(--text-muted, #64748b)" }}>PAID TO *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Vendor / Payee name"
+                    style={{ width: "100%", padding: "0.45rem 0.6rem", borderRadius: "6px", border: "1px solid var(--border-color, #cbd5e1)" }}
+                    value={expDraft.paidTo}
+                    onChange={(e) => setExpDraft({ ...expDraft, paidTo: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, marginBottom: "0.25rem", color: "var(--text-muted, #64748b)" }}>EXPENSE DATE</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    style={{ width: "100%", padding: "0.45rem 0.6rem", borderRadius: "6px", border: "1px solid var(--border-color, #cbd5e1)" }}
+                    value={expDraft.expenseDate || new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setExpDraft({ ...expDraft, expenseDate: e.target.value })}
+                  />
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, marginBottom: "0.25rem", color: "var(--text-muted, #64748b)" }}>NOTE / DETAILS</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Hydraulic oil 20L drum, invoice #992"
+                    style={{ width: "100%", padding: "0.45rem 0.6rem", borderRadius: "6px", border: "1px solid var(--border-color, #cbd5e1)" }}
+                    value={expDraft.note}
+                    onChange={(e) => setExpDraft({ ...expDraft, note: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                <button className="btn-outline btn-sm" onClick={() => setExpFormOpen(false)}>Cancel</button>
+                <button
+                  className="btn-primary btn-sm"
+                  onClick={() => {
+                    const parsedAmount = Number(expDraft.amount);
+                    if (!parsedAmount || parsedAmount <= 0) {
+                      showToast("⚠ Please enter a valid expense amount > 0");
+                      return;
+                    }
+                    if (!expDraft.paidTo.trim()) {
+                      showToast("⚠ Please specify who the expense was paid to");
+                      return;
+                    }
+                    onAddExpense({
+                      category: expDraft.category,
+                      amount: parsedAmount,
+                      paidTo: expDraft.paidTo.trim(),
+                      expenseDate: expDraft.expenseDate || new Date().toISOString().slice(0, 10),
+                      note: expDraft.note.trim() || undefined,
+                    });
+                    setExpDraft({ category: "maintenance", amount: "", paidTo: "", expenseDate: "", note: "" });
+                    setExpFormOpen(false);
+                  }}
+                >
+                  <Check size={14} /> Record Expense
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Filter Bar & Summary */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", margin: "1rem 0" }}>
+            <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+              <button
+                className={`btn-sm ${expCategoryFilter === "all" ? "btn-primary" : "btn-outline"}`}
+                style={{ borderRadius: "20px", fontSize: "0.78rem", padding: "0.25rem 0.65rem" }}
+                onClick={() => setExpCategoryFilter("all")}
+              >
+                All ({expenses.length})
+              </button>
+              {EXPENSE_CATEGORIES.map((c) => {
+                const count = expenses.filter((e) => e.category === c.value).length;
+                const isActive = expCategoryFilter === c.value;
+                return (
+                  <button
+                    key={c.value}
+                    className={`btn-sm ${isActive ? "btn-primary" : "btn-outline"}`}
+                    style={{ borderRadius: "20px", fontSize: "0.78rem", padding: "0.25rem 0.65rem" }}
+                    onClick={() => setExpCategoryFilter(c.value)}
+                  >
+                    {c.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <div className="search-box" style={{ maxWidth: "220px" }}>
+                <Search size={14} />
+                <input
+                  type="text"
+                  placeholder="Search payee or note..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Expense Log Table */}
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>ID</th>
+                  <th>Category</th>
+                  <th>Paid To</th>
+                  <th>Note / Purpose</th>
+                  <th style={{ textAlign: "right" }}>Amount</th>
+                  <th>Recorded By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredExpenses.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted, #64748b)" }}>
+                      No expense records found matching criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredExpenses.map((exp) => {
+                    const catBadgeClass =
+                      exp.category === "rent"
+                        ? "badge badge-primary"
+                        : exp.category === "electricity"
+                        ? "badge badge-warning"
+                        : exp.category === "raw_material"
+                        ? "badge badge-success"
+                        : exp.category === "salary"
+                        ? "badge badge-info"
+                        : exp.category === "maintenance"
+                        ? "badge badge-danger"
+                        : "badge badge-secondary";
+                    return (
+                      <tr key={exp.id}>
+                        <td style={{ whiteSpace: "nowrap", fontFamily: "var(--font-mono, monospace)", fontSize: "0.85rem" }}>
+                          {exp.expenseDate}
+                        </td>
+                        <td style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.82rem", color: "var(--text-muted, #64748b)" }}>
+                          {exp.id}
+                        </td>
+                        <td>
+                          <span className={catBadgeClass} style={{ textTransform: "capitalize" }}>
+                            {exp.category.replace("_", " ")}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{exp.paidTo}</td>
+                        <td style={{ color: "var(--text-muted, #64748b)", fontSize: "0.88rem" }}>{exp.note || "—"}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700, fontFamily: "var(--font-mono, monospace)" }}>
+                          {rupee.format(exp.amount)}
+                        </td>
+                        <td style={{ fontSize: "0.82rem", color: "var(--text-muted, #64748b)" }}>{exp.createdBy}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+              {filteredExpenses.length > 0 && (
+                <tfoot>
+                  <tr style={{ background: "var(--bg-subtle, #f8fafc)", fontWeight: 700 }}>
+                    <td colSpan={5} style={{ textAlign: "right" }}>
+                      Total Filtered Expenses ({filteredExpenses.length} records):
+                    </td>
+                    <td style={{ textAlign: "right", fontFamily: "var(--font-mono, monospace)" }}>
+                      {rupee.format(filteredExpenses.reduce((sum, e) => sum + e.amount, 0))}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </section>
+      )}
       {section === "cash" && <CashBankSection showToast={showToast} />}
       {section === "costing" && <CostingSection products={products} productionEntries={productionEntries} machines={machines} />}
       {section === "payroll" && <FinanceListSection title="Payroll Payables" subtitle="Liability view from approved HR payroll" icon={<Users size={20} />} rows={[["SEP-2026", "Production team", "Net salary", "₹2,84,500", "10 Oct", "Pending"], ["SEP-2026", "PF / ESI", "Statutory liability", "₹48,200", "15 Oct", "Pending"], ["AUG-2026", "All departments", "Salary payout", "₹3,12,800", "10 Sep", "Paid"]]} onCreate={() => runAction("Payroll payment")} />}
       {section === "ledger" && <LedgerSection ledgerEntries={ledgerEntries} parties={parties} />}
       {section === "tax" && <TaxSection invoices={invoices} />}
-      {section === "reports" && <ReportsFinanceSection onExport={() => showToast("Financial report exported")} />}
+      {section === "reports" && <ReportsFinanceSection invoices={invoices} expenses={expenses} showToast={showToast} />}
       {section === "settings" && <FinanceSettingsSection />}
     </div>
   );
@@ -1082,8 +1383,17 @@ function FinanceKpi({ label, value, detail, tone, icon }: { label: string; value
   return <div className="finance-kpi"><div className={`finance-kpi-icon ${tone}`}>{icon}</div><div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div></div>;
 }
 
-function FinanceTable({ title, subtitle, invoices, parties, query, setQuery, onCreate }: { title: string; subtitle: string; invoices: Invoice[]; parties: Party[]; query: string; setQuery: (value: string) => void; onCreate: () => void }) {
-  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>{title}</h3><p>{subtitle}</p></div><button className="btn-primary" onClick={onCreate}><Plus size={16} /> Create sales invoice</button></div><div className="finance-toolbar"><div className="finance-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search invoice, customer or amount" /></div><button className="btn-outline"><Filter size={14} /> Filters</button><button className="btn-outline"><Download size={14} /> Export</button></div><div className="table-container"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Created</th><th>Amount</th><th>Due date</th><th>Status</th><th>Action</th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id}><td><strong>{invoice.invoiceNumber}</strong><small className="table-sub">{invoice.items.length} line items</small></td><td>{parties.find((party) => party.id === invoice.partyId)?.name ?? "Unknown party"}</td><td>{invoice.createdAt}</td><td><strong>{rupee.format(invoice.total)}</strong><small className="table-sub">Balance due</small></td><td>{invoice.dueDate}</td><td><span className={`badge badge-${invoice.status === "overdue" ? "danger" : invoice.status === "paid" ? "success" : "info"}`}>{invoice.status}</span></td><td><button className="icon-button"><MoreHorizontal size={16} /></button></td></tr>)}</tbody></table></div></section>;
+function FinanceTable({ title, subtitle, invoices, parties, query, setQuery, onCreate, showToast }: { title: string; subtitle: string; invoices: Invoice[]; parties: Party[]; query: string; setQuery: (value: string) => void; onCreate: () => void; showToast: (message: string) => void }) {
+  const exportInvoices = () => {
+    const rows = [["Invoice", "Customer", "Created", "Amount", "Due Date", "Status"], ...invoices.map((invoice) => [invoice.invoiceNumber, parties.find((party) => party.id === invoice.partyId)?.name ?? "Unknown party", invoice.createdAt, String(invoice.total), invoice.dueDate, invoice.status])];
+    const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    link.download = "factory-os-invoices.csv";
+    link.click();
+    showToast(`${invoices.length} invoices exported`);
+  };
+  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>{title}</h3><p>{subtitle}</p></div><button className="btn-primary" onClick={onCreate}><Plus size={16} /> Create sales invoice</button></div><div className="finance-toolbar"><div className="finance-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search invoice, customer or amount" /></div><button className="btn-outline" onClick={() => setQuery("")}><Filter size={14} /> Clear filter</button><button className="btn-outline" onClick={exportInvoices}><Download size={14} /> Export</button></div><div className="table-container">{invoices.length === 0 ? <div className="empty-state"><Search size={20} /><strong>No invoices found</strong><p>Try another search or clear the filter.</p><button className="btn-outline btn-sm" onClick={() => setQuery("")}>Clear filter</button></div> : <table><thead><tr><th>Invoice</th><th>Customer</th><th>Created</th><th>Amount</th><th>Due date</th><th>Status</th><th>Action</th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id}><td><strong>{invoice.invoiceNumber}</strong><small className="table-sub">{invoice.items.length} line items</small></td><td>{parties.find((party) => party.id === invoice.partyId)?.name ?? "Unknown party"}</td><td>{invoice.createdAt}</td><td><strong>{rupee.format(invoice.total)}</strong><small className="table-sub">Balance due</small></td><td>{invoice.dueDate}</td><td><span className={`badge badge-${invoice.status === "overdue" ? "danger" : invoice.status === "paid" ? "success" : "info"}`}>{invoice.status}</span></td><td><button className="icon-button" aria-label={`More actions for ${invoice.invoiceNumber}`}><MoreHorizontal size={16} /></button></td></tr>)}</tbody></table>}</div></section>;
 }
 
 function FinanceListSection({ title, subtitle, icon, rows, onCreate }: { title: string; subtitle: string; icon: React.ReactNode; rows: string[][]; onCreate: () => void }) {
@@ -1107,8 +1417,63 @@ function TaxSection({ invoices }: { invoices: Invoice[] }) {
   return <div className="tax-grid"><FinanceKpi label="Output GST" value={rupee.format(output)} detail="GST collected on sales" tone="blue" icon={<ReceiptText size={18} />} /><FinanceKpi label="Input GST" value={rupee.format(28400)} detail="Eligible ITC from purchases" tone="green" icon={<ArrowDownRight size={18} />} /><FinanceKpi label="Net GST payable" value={rupee.format(Math.max(0, output - 28400))} detail="Filing period · October 2026" tone="orange" icon={<IndianRupee size={18} />} /><section className="panel wide"><div className="panel-header"><div className="panel-title"><h3>GST compliance workspace</h3><p>Sales register, purchase register, HSN summary and tax liabilities</p></div><span className="badge badge-warning">Filing in 12 days</span></div><div className="tax-checklist">{["Sales register reconciled", "Input tax credit matched", "HSN summary reviewed", "GSTR-1 preparation"].map((item, index) => <div key={item}><span className={`check ${index < 2 ? "done" : ""}`}>{index < 2 ? "✓" : "•"}</span><span>{item}</span><small>{index < 2 ? "Complete" : "Action required"}</small></div>)}</div></section></div>;
 }
 
-function ReportsFinanceSection({ onExport }: { onExport: () => void }) {
-  return <section className="panel finance-table-section"><div className="panel-header"><div className="panel-title"><h3>Financial Reports</h3><p>Export-ready reports with date range and plant filters</p></div><button className="btn-primary" onClick={onExport}><Download size={16} /> Export summary</button></div><div className="report-grid">{["Profit & Loss", "Balance Sheet", "Cash Flow Statement", "Trial Balance", "Receivable Aging", "Payable Aging", "Product Profitability", "GST Summary"].map((report) => <button key={report} onClick={onExport}><FileText size={19} /><span>{report}<small>FY 2026–27 · Plant #1</small></span><ChevronRight size={16} /></button>)}</div></section>;
+function ReportsFinanceSection({ invoices, expenses, showToast }: { invoices: Invoice[]; expenses: Expense[]; showToast: (msg: string) => void }) {
+  const exportPL = (reportName: string) => {
+    const totalRev = invoices.reduce((s, i) => s + (i.total || 0), 0);
+    const totalExp = expenses.reduce((s, e) => s + e.amount, 0);
+    const net = totalRev - totalExp;
+
+    const rows = [
+      ["=== FINANCIAL STATEMENT ===", reportName],
+      ["Plant", "Rajput Plastics - Sitapura Industrial Area, Jaipur"],
+      ["Period", "FY 2026-27 (Year-to-Date)"],
+      ["Generated On", new Date().toLocaleString()],
+      [],
+      ["--- SECTION 1: REVENUE (MONEY IN) ---", ""],
+      ["Total Invoiced Sales", String(totalRev)],
+      ["Paid Invoices", String(invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0))],
+      ["Outstanding Invoices", String(invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + i.total, 0))],
+      [],
+      ["--- SECTION 2: FACTORY EXPENSES (MONEY OUT) ---", ""],
+      ...expenses.map((e) => [`Expense: ${e.paidTo} (${e.category})`, String(e.amount)]),
+      ["Total Expenses", String(totalExp)],
+      [],
+      ["--- SECTION 3: NET FINANCIAL POSITION ---", ""],
+      ["Net Position (Revenue - Expenses)", String(net)],
+    ];
+
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `financial-report-${reportName.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`✓ ${reportName} exported with comprehensive revenue & expense data.`);
+  };
+
+  return (
+    <section className="panel finance-table-section">
+      <div className="panel-header">
+        <div className="panel-title">
+          <h3>Financial Reports & P&L Statement</h3>
+          <p>Export-ready financial summaries with combined revenue, expense and net position</p>
+        </div>
+        <button className="btn-primary" onClick={() => exportPL("Combined P&L Summary")}>
+          <Download size={16} /> Export summary
+        </button>
+      </div>
+      <div className="report-grid">
+        {["Profit & Loss", "Balance Sheet", "Cash Flow Statement", "Trial Balance", "Receivable Aging", "Expense Breakdown", "Product Profitability", "GST Summary"].map((report) => (
+          <button key={report} onClick={() => exportPL(report)}>
+            <FileText size={19} />
+            <span>{report}<small>FY 2026–27 · Real P&L View</small></span>
+            <ChevronRight size={16} />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function FinanceSettingsSection() {
