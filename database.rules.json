@@ -1,0 +1,28 @@
+{
+  "rules": {
+    "factory-os": {
+      "$factoryId": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('factoryId').val() == $factoryId",
+        "hr": {
+          "employees": {
+            "$employeeId": {
+              ".validate": "newData.hasChildren(['id', 'name', 'role', 'phone', 'assignedShift', 'attendanceStatus'])"
+            }
+          },
+          "leaveRequests": {
+            "$leaveId": {
+              ".validate": "newData.hasChildren(['id', 'employeeId', 'type', 'from', 'to', 'status'])"
+            }
+          }
+        }
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    }
+  }
+}
