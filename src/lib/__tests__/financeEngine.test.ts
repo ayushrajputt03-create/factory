@@ -37,9 +37,9 @@ describe("Finance foundation", () => {
 
   it("uses IGST for inter-state invoices and computes outstanding balance", () => {
     const result = calculateInvoiceTotals([{ quantity: 1, ratePaise: toPaise(1000), discountType: "percent", discountValue: 10, gstRate: 18 }], "08", "09");
-    expect(result.igstPaise).toBe(1620);
+    expect(result.igstPaise).toBe(16200);
     expect(result.cgstPaise).toBe(0);
-    expect(calculateOutstandingPaise(result.totalPaise, [toPaise(500)])).toBe(1120);
+    expect(calculateOutstandingPaise(result.totalPaise, [toPaise(500)])).toBe(56200);
   });
 
   it("rejects overpayment and excessive discounts", () => {
