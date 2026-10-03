@@ -47,6 +47,7 @@ import {
   X,
 } from "lucide-react";
 import { dataService } from "./lib/dataService";
+import { isFirebaseConfigured } from "./lib/firebaseClient";
 import {
   initialBoms,
   initialDispatches,
@@ -1168,7 +1169,8 @@ function AccountsFinanceView({
           <p>Receivables, payables, cash control and factory profitability in one place.</p>
         </div>
         <div className="accounts-header-actions">
-          <span className="finance-role"><ShieldCheck size={15} /> {userRole === "owner" ? "Owner access" : userRole === "ca" ? "Read-only CA" : "Supervisor view"}</span>
+              <span className="finance-role"><ShieldCheck size={15} /> {userRole === "owner" ? "Owner access" : userRole === "ca" ? "Read-only CA" : "Supervisor view"}</span>
+              <span className={`data-mode-badge ${isFirebaseConfigured ? "configured" : "demo"}`} title={isFirebaseConfigured ? "Firebase SDK configured; data mode is controlled by VITE_DATA_MODE" : "Using local demo storage"}>{isFirebaseConfigured ? "Firebase ready" : "Demo mode"}</span>
           <button className="btn-primary" onClick={() => runAction("Journal entry")}><Plus size={16} /> New journal entry</button>
         </div>
       </div>

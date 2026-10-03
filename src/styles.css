@@ -258,6 +258,9 @@ code {
 .ageing-track { height: 8px; border-radius: 99px; background: #edf1f6; overflow: hidden; }
 .ageing-track span { display: block; height: 100%; border-radius: inherit; }
 .cash-flow-legend { display: flex; gap: 12px; color: var(--text-muted); font-size: 11px; }
+.data-mode-badge { display: inline-flex; align-items: center; padding: 6px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.data-mode-badge.configured { color: #166534; background: #dcfce7; }
+.data-mode-badge.demo { color: #92400e; background: #fef3c7; }
 .cash-flow-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .legend-dot.received, .cash-bar.received { background: #3564d8; }
