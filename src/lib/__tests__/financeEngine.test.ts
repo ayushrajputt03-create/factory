@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertBalancedJournal, assertFinanceAccess, createReversal, postJournalEntry, toPaise } from "../financeEngine";
+import { assertBalancedJournal, assertFinanceAccess, calculateInvoiceTotals, calculateOutstandingPaise, createReversal, postJournalEntry, toPaise } from "../financeEngine";
 
 describe("Finance foundation", () => {
   const lines = [
@@ -24,5 +24,26 @@ describe("Finance foundation", () => {
   it("blocks roles without finance access", () => {
     expect(() => assertFinanceAccess("operator", "view")).toThrow();
     expect(() => assertFinanceAccess("accountant", "create")).not.toThrow();
+  });
+
+  it("splits intra-state GST into CGST and SGST", () => {
+    const result = calculateInvoiceTotals([{ quantity: 2, ratePaise: toPaise(100), gstRate: 18 }], "08", "08");
+    expect(result.subtotalPaise).toBe(20000);
+    expect(result.cgstPaise).toBe(1800);
+    expect(result.sgstPaise).toBe(1800);
+    expect(result.igstPaise).toBe(0);
+    expect(result.totalPaise).toBe(23600);
+  });
+
+  it("uses IGST for inter-state invoices and computes outstanding balance", () => {
+    const result = calculateInvoiceTotals([{ quantity: 1, ratePaise: toPaise(1000), discountType: "percent", discountValue: 10, gstRate: 18 }], "08", "09");
+    expect(result.igstPaise).toBe(1620);
+    expect(result.cgstPaise).toBe(0);
+    expect(calculateOutstandingPaise(result.totalPaise, [toPaise(500)])).toBe(1120);
+  });
+
+  it("rejects overpayment and excessive discounts", () => {
+    expect(() => calculateOutstandingPaise(1000, [1001])).toThrow();
+    expect(() => calculateInvoiceTotals([{ quantity: 1, ratePaise: 1000, discountType: "flat", discountValue: 1001, gstRate: 0 }], "08", "08")).toThrow();
   });
 });

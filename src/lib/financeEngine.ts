@@ -48,6 +48,64 @@ export const toPaise = (amount: number): number => Math.round(amount * 100);
 export const fromPaise = (paise: number): number => paise / 100;
 export const formatPaise = (paise: number): string => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2 }).format(fromPaise(paise));
 
+export type InvoiceLineInput = { quantity: number; ratePaise: number; discountType?: "percent" | "flat"; discountValue?: number; gstRate: number };
+export type InvoiceTaxResult = {
+  subtotalPaise: number;
+  discountPaise: number;
+  taxablePaise: number;
+  cgstPaise: number;
+  sgstPaise: number;
+  igstPaise: number;
+  totalPaise: number;
+};
+
+const assertNonNegative = (value: number, label: string) => {
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${label} must be zero or greater.`);
+};
+
+export function calculateInvoiceTotals(lines: InvoiceLineInput[], sellerStateCode: string, customerStateCode: string, roundOffPaise = 0): InvoiceTaxResult {
+  if (!lines.length) throw new Error("An invoice needs at least one line item.");
+  const interstate = sellerStateCode.trim() !== customerStateCode.trim();
+  let subtotalPaise = 0;
+  let discountPaise = 0;
+  let cgstPaise = 0;
+  let sgstPaise = 0;
+  let igstPaise = 0;
+
+  for (const line of lines) {
+    if (!Number.isFinite(line.quantity) || line.quantity <= 0) throw new Error("Quantity must be greater than zero.");
+    if (!Number.isFinite(line.ratePaise) || line.ratePaise < 0) throw new Error("Rate cannot be negative.");
+    assertNonNegative(line.gstRate, "GST rate");
+    const lineSubtotal = Math.round(line.quantity * line.ratePaise);
+    const requestedDiscount = line.discountType === "percent"
+      ? Math.round(lineSubtotal * (line.discountValue ?? 0) / 100)
+      : Math.round(line.discountValue ?? 0);
+    if (requestedDiscount > lineSubtotal) throw new Error("Discount cannot exceed line value.");
+    const lineTaxable = lineSubtotal - requestedDiscount;
+    subtotalPaise += lineSubtotal;
+    discountPaise += requestedDiscount;
+    const tax = Math.round(lineTaxable * line.gstRate / 100);
+    if (interstate) igstPaise += tax;
+    else {
+      cgstPaise += Math.round(tax / 2);
+      sgstPaise += tax - Math.round(tax / 2);
+    }
+  }
+  const taxablePaise = subtotalPaise - discountPaise;
+  const totalPaise = taxablePaise + cgstPaise + sgstPaise + igstPaise + roundOffPaise;
+  return { subtotalPaise, discountPaise, taxablePaise, cgstPaise, sgstPaise, igstPaise, totalPaise };
+}
+
+export function calculateOutstandingPaise(totalPaise: number, paymentsPaise: number[]): number {
+  assertNonNegative(totalPaise, "Invoice total");
+  const paidPaise = paymentsPaise.reduce((sum, payment) => {
+    if (!Number.isFinite(payment) || payment < 0) throw new Error("Payment cannot be negative.");
+    return sum + payment;
+  }, 0);
+  if (paidPaise > totalPaise) throw new Error("Payment cannot exceed invoice total.");
+  return totalPaise - paidPaise;
+}
+
 export function assertFinanceAccess(role: FinanceRole, permission: string): void {
   if (!financePermissions[role]?.[permission]) {
     throw new Error(`Role ${role} is not allowed to ${permission} finance records.`);
