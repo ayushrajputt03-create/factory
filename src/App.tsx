@@ -660,6 +660,14 @@ export default function App() {
         </div>
       </aside>
 
+      <nav className="mobile-bottom-nav" aria-label="Mobile primary navigation">
+        <button className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}><Gauge size={18} /><span>Home</span></button>
+        <button className={view === "entry" ? "active" : ""} onClick={() => setView("entry")}><Cpu size={18} /><span>Production</span></button>
+        <button className={view === "work_orders" ? "active" : ""} onClick={() => setView("work_orders")}><ClipboardList size={18} /><span>Orders</span></button>
+        <button className={view === "notices" ? "active" : ""} onClick={() => setView("notices")}><Bell size={18} /><span>Alerts</span></button>
+        <button onClick={() => setShowMoreNav(true)}><MoreHorizontal size={18} /><span>More</span></button>
+      </nav>
+
       {/* Main Workspace */}
       <main className="workspace" id="main-content">
         {/* Topbar */}

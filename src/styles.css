@@ -227,6 +227,53 @@ code {
 
 .detail-drawer-actions { display: flex; align-items: center; gap: 8px; }
 
+.mobile-bottom-nav { display: none; }
+
+@media (max-width: 760px) {
+  body { padding-bottom: 72px; }
+  .sidebar { display: none; }
+  .app-shell { display: block; }
+  .workspace { min-height: 100vh; }
+  .mobile-bottom-nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    z-index: 50;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    min-height: 68px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    background: #ffffff;
+    border-top: 1px solid var(--card-border);
+    box-shadow: 0 -8px 24px rgb(2 16 36 / 0.08);
+  }
+  .mobile-bottom-nav button {
+    display: grid;
+    min-height: 52px;
+    place-items: center;
+    gap: 2px;
+    border: 0;
+    border-radius: 8px;
+    color: var(--text-muted);
+    background: transparent;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .mobile-bottom-nav button.active { color: var(--primary-blue); background: #eef5fb; }
+  .mobile-bottom-nav button svg { width: 19px; height: 19px; }
+  .topbar { position: sticky; top: 0; z-index: 10; }
+  .topbar-right { max-width: 42%; }
+  .view-body { padding: 0.85rem; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+  .metric-card { min-width: 0; padding: 0.75rem; }
+  .metric-label { white-space: normal; }
+  .metric-value { font-size: 1.05rem; }
+  .panel { border-radius: 8px; padding: 0.8rem; }
+  .table-container { overflow-x: auto; }
+  table { min-width: 680px; }
+}
+
 /* Accounts & Finance module */
 .accounts-module { display: flex; flex-direction: column; gap: 1rem; }
 .accounts-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
