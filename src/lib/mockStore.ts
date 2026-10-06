@@ -2,6 +2,7 @@ import {
   initialBoms,
   initialBreakdownTickets,
   initialDispatches,
+  initialExpenses,
   initialFollowUps,
   initialInvoices,
   initialInteractions,
@@ -23,6 +24,7 @@ import type {
   ClientFollowUp,
   ClientInteraction,
   Dispatch,
+  Expense,
   Invoice,
   LedgerEntry,
   Machine,
@@ -55,16 +57,27 @@ const STORAGE_KEYS = {
   BREAKDOWNS: "factory_os_breakdowns",
   WORK_ORDERS: "factory_os_work_orders",
   QC_INSPECTIONS: "factory_os_qc_inspections",
+  EXPENSES: "factory_os_expenses",
 };
+
+const memoryStore: Record<string, string> = {};
 
 function getStorage<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      localStorage.setItem(key, JSON.stringify(fallback));
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        localStorage.setItem(key, JSON.stringify(fallback));
+        return fallback;
+      }
+      return JSON.parse(raw);
+    }
+    const memRaw = memoryStore[key];
+    if (!memRaw) {
+      memoryStore[key] = JSON.stringify(fallback);
       return fallback;
     }
-    return JSON.parse(raw);
+    return JSON.parse(memRaw);
   } catch {
     return fallback;
   }
@@ -72,9 +85,13 @@ function getStorage<T>(key: string, fallback: T): T {
 
 function setStorage<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(key, JSON.stringify(value));
+    } else {
+      memoryStore[key] = JSON.stringify(value);
+    }
   } catch (err) {
-    console.error("localStorage write error:", err);
+    console.error("Storage write error:", err);
   }
 }
 
@@ -129,6 +146,9 @@ export const mockStore = {
 
   getQcInspections: (): QcInspection[] => getStorage(STORAGE_KEYS.QC_INSPECTIONS, initialQcInspections),
   setQcInspections: (data: QcInspection[]) => setStorage(STORAGE_KEYS.QC_INSPECTIONS, data),
+
+  getExpenses: (): Expense[] => getStorage(STORAGE_KEYS.EXPENSES, initialExpenses),
+  setExpenses: (data: Expense[]) => setStorage(STORAGE_KEYS.EXPENSES, data),
 
   resetAll: () => {
     localStorage.clear();
