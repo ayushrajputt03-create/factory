@@ -4695,7 +4695,7 @@ function WorkOrdersView({
   };
 
   const handleCreateWorkOrder = () => {
-    if (!newForm.productId || !newForm.quantity || !newForm.dueDate) {
+    if (!newForm.productId || !Number.isFinite(Number(newForm.quantity)) || Number(newForm.quantity) <= 0 || !newForm.dueDate) {
       showToast("Fill in product, quantity and due date.");
       return;
     }
@@ -4839,9 +4839,9 @@ function WorkOrdersView({
                   const isOverdue = wo.dueDate < today && wo.status !== "Completed" && wo.status !== "Closed";
                   return (
                     <tr key={wo.id}>
-                      <td><code>{wo.orderNumber}</code></td>
+                      <td><code>{wo.workOrderNumber || wo.orderNumber || "—"}</code></td>
                       <td><strong>{product?.name ?? wo.productId}</strong></td>
-                      <td>{wo.quantity.toLocaleString("en-IN")} {product?.unit}</td>
+                      <td>{numberFmt.format(wo.quantityOrdered ?? wo.quantity ?? 0)} {product?.unit}</td>
                       <td>{machine?.name ?? wo.assignedMachineId ?? "—"}</td>
                       <td><span className={`badge ${priorityBadge(wo.priority ?? "Normal")}`}>{wo.priority ?? "Normal"}</span></td>
                       <td>
