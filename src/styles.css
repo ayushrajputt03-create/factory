@@ -1279,8 +1279,8 @@ tr.row-breakdown td {
 
 /* Reference-inspired school ERP visual language */
 :root {
-  --sidebar-bg: #111827;
-  --sidebar-active-bg: #263a5b;
+  --sidebar-bg: #021024;
+  --sidebar-active-bg: #052659;
   --sidebar-text: #f8fafc;
   --sidebar-muted: #9aa9c0;
   --sidebar-indicator: #6d8cff;
@@ -1515,4 +1515,79 @@ svg {
   min-width: 30px;
   text-align: center;
   letter-spacing: -0.01em;
+}
+
+:root {
+  --surface: var(--card-bg);
+  --surface-muted: var(--bg-app);
+  --border: var(--card-border);
+}
+.navigation-close, .navigation-backdrop { display: none; }
+.plant-overview-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 8px 0; }
+.plant-overview-heading h2 { font-size: 26px; font-weight: 650; letter-spacing: -0.8px; margin: 6px 0; }
+.plant-overview-heading p { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+.operations-priority { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; padding: 12px 16px; border: 1px solid #e8dcc3; background: #fffaf0; border-radius: 10px; }
+.operations-priority > span { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #855911; }
+.operations-priority button { display: flex; align-items: center; gap: 5px; border: 0; background: transparent; color: #725522; font-size: 12px; cursor: pointer; }
+.production-comparison-row { padding: 14px 0; border-top: 1px solid var(--card-border); }
+.production-comparison-row > div:first-child { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 10px; font-size: 13px; }
+.production-comparison-row strong { font-weight: 500; }
+.production-comparison-row span { font-variant-numeric: tabular-nums; }
+.production-comparison-bars { display: grid; gap: 5px; background: #f5f8fc; border-radius: 4px; }
+.production-comparison-bars span { display: block; height: 8px; background: #5483b3; border-radius: 3px; }
+.production-comparison-bars span + span { background: #c1e8ff; }
+.production-comparison-legend { display: flex; gap: 18px; padding-bottom: 14px; color: var(--text-muted); font-size: 12px; }
+.production-comparison-legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; background: #5483b3; border-radius: 2px; margin-right: 6px; }
+.production-comparison-legend span + span::before { background: #c1e8ff; }
+.metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.metric-card { min-height: 108px; border-radius: 10px; }
+.metric-value { font-size: 25px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.panel { border-radius: 10px; box-shadow: 0 2px 5px #02102404; }
+.panel-title h3 { font-size: 15px; font-weight: 650; }
+.panel-title p { font-size: 12px; line-height: 1.6; }
+th { font-size: 11px; letter-spacing: .04em; }
+td { font-size: 13px; font-variant-numeric: tabular-nums; }
+.form-control { border-radius: 7px; }
+@media (max-width: 760px) {
+  .plant-overview-heading { align-items: flex-start; flex-direction: column; }
+  .plant-overview-heading h2 { font-size: 23px; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .production-comparison-row > div:first-child { flex-direction: column; gap: 4px; }
+  .operations-priority { gap: 8px; }
+}
+.sidebar { background: var(--sidebar-bg); }
+.nav-item.active { background: var(--sidebar-active-bg); box-shadow: inset 3px 0 #c1e8ff; }
+.accounts-header, .crm-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.accounts-header h2, .crm-header h2 { font-size: 24px; font-weight: 650; letter-spacing: -.6px; }
+.accounts-tabs { gap: 8px; padding-bottom: 4px; }
+.accounts-tabs button { min-height: 44px; font-size: 13px; }
+.finance-toolbar, .crm-toolbar { flex-wrap: wrap; gap: 10px; }
+.finance-search { flex: 1 1 240px; min-width: 0; }
+.finance-kpi-grid { gap: 12px; }
+.finance-kpi { min-width: 0; padding: 16px; border-radius: 10px; }
+.finance-kpi strong { font-variant-numeric: tabular-nums; }
+.detail-drawer-header { padding: 20px; }
+.detail-drawer-body { padding: 20px; }
+.btn-outline:hover { background: #eef5fb; border-color: #7da0ca; }
+tbody tr:hover { background: #f5f9fc; }
+@media (max-width: 760px) {
+  .accounts-header, .crm-header { flex-direction: column; gap: 12px; }
+  .finance-kpi-grid, .finance-kpi-grid.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .accounts-header-actions { flex-wrap: wrap; }
+  .finance-search { flex-basis: 100%; }
+}
+.nav-item { font-size: 13px; }
+.btn-primary { background: var(--primary-blue); color: #021024; }
+.detail-drawer { overflow-y: auto; }
+.table-container { overflow: auto; }
+th { position: sticky; top: 0; background: var(--card-bg); z-index: 1; }
+@media (max-width: 760px) {
+  .sidebar { display: none; }
+  .sidebar.navigation-open { display: flex; position: fixed; inset: 0 auto 0 0; width: min(300px, 88vw); height: 100dvh; z-index: 61; }
+  .sidebar.navigation-open nav { display: flex; max-height: none; overflow: visible; }
+  .navigation-backdrop { display: block; position: fixed; inset: 0; z-index: 60; background: #02102488; border: 0; }
+  .navigation-close { display: flex; align-items: center; justify-content: center; min-height: 44px; color: white; background: transparent; border: 0; margin-left: auto; width: 44px; }
+  button, .btn-primary, .btn-outline, .nav-item, input, select { min-height: 44px; }
+  .topbar { height: auto; min-height: 64px; }
+  .page-title h1 { font-size: 17px; }
 }

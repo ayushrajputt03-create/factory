@@ -2,7 +2,7 @@
   "rules": {
     "factory-os": {
       "$factoryId": {
-        ".read": "auth != null",
+        ".read": "auth != null && root.child('users').child(auth.uid).child('factoryId').val() == $factoryId",
         ".write": "auth != null && root.child('users').child(auth.uid).child('factoryId').val() == $factoryId",
         "hr": {
           "employees": {
@@ -21,7 +21,7 @@
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
+        ".write": false
       }
     }
   }

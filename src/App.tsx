@@ -146,6 +146,14 @@ import {
 export default function App() {
   const [view, setViewState] = useState<View>(() => viewFromPath(window.location.pathname));
   const [showMoreNav, setShowMoreNav] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => {
+    const closeNavigation = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    };
+    window.addEventListener("keydown", closeNavigation);
+    return () => window.removeEventListener("keydown", closeNavigation);
+  }, []);
   const [userRole, setUserRole] = useState<"owner" | "supervisor" | "ca">("owner");
   const [materials, setMaterials] = useState<Material[]>(initialMaterials);
   const [products, setProducts] = useState<Product[]>(initialProducts);
@@ -166,6 +174,7 @@ export default function App() {
 
   const [toast, setToast] = useState<string>("Plant Online · Shift 1 Running");
   const setView = (nextView: View) => {
+    setMobileNavOpen(false);
     setViewState(nextView);
     const nextPath = nextView === "dashboard" ? "/" : `/${nextView.replaceAll("_", "/")}`;
     if (window.location.pathname !== nextPath) window.history.pushState({ view: nextView }, "", nextPath);
@@ -577,7 +586,9 @@ export default function App() {
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Skip to main content</a>
       {/* Sidebar */}
-      <aside className="sidebar">
+      {mobileNavOpen && <button className="navigation-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
+      <aside id="factory-navigation" className={`sidebar ${mobileNavOpen ? "navigation-open" : ""}`}>
+        <button className="navigation-close" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)}><X size={20} /></button>
         <div className="plant-brand">
           <div className="brand-icon">
             <Factory size={24} />
@@ -665,7 +676,7 @@ export default function App() {
         <button className={view === "entry" ? "active" : ""} onClick={() => setView("entry")}><Cpu size={18} /><span>Production</span></button>
         <button className={view === "work_orders" ? "active" : ""} onClick={() => setView("work_orders")}><ClipboardList size={18} /><span>Orders</span></button>
         <button className={view === "notices" ? "active" : ""} onClick={() => setView("notices")}><Bell size={18} /><span>Alerts</span></button>
-        <button onClick={() => setShowMoreNav(true)}><MoreHorizontal size={18} /><span>More</span></button>
+        <button aria-expanded={mobileNavOpen} aria-controls="factory-navigation" onClick={() => { setShowMoreNav(true); setMobileNavOpen(true); }}><MoreHorizontal size={18} /><span>More</span></button>
       </nav>
 
       {/* Main Workspace */}
@@ -675,18 +686,18 @@ export default function App() {
           <div className="topbar-left">
             <div className="page-title">
               <h1>
-                {view === "dashboard" && "Factory Command & Analytics Center"}
+                {view === "dashboard" && "Command Center"}
                 {view === "entry" && "Shop-Floor Live Production Register"}
-                {view === "work_orders" && "Work Order Pipeline & Manufacturing Jobs"}
-                {view === "machines" && "Machine Status Board & Maintenance Tracker"}
+                {view === "work_orders" && "Work Orders"}
+                {view === "machines" && "Machines & Maintenance"}
                 {view === "inventory" && "Raw Material & Inventory Control"}
                 {view === "qc" && "Quality Control & Inspection Queue"}
                 {view === "bom" && "Bill of Materials (BOM) & Product Recipes"}
                 {view === "billing" && "GST Tax Invoicing & Accounts Portal"}
                 {view === "clients" && "Party Directory & Ledger Balances"}
                 {view === "crm" && "CRM · Sales Pipeline & Customer Growth"}
-                {view === "accounts" && "Accounts & Finance Control Center"}
-                {view === "hr" && "People, Attendance & Payroll Center"}
+                {view === "accounts" && "Accounts & Finance"}
+                {view === "hr" && "People & HR"}
                 {view === "dispatch" && "Logistics, Shipments & Fleet Tracker"}
                 {view === "reports" && "Operational & Material Consumption Reports"}
                 {view === "notices" && "Plant Bulletins & Quality Circulars"}
@@ -1690,6 +1701,8 @@ function DashboardView({
 
   return (
     <>
+      <div className="plant-overview-heading"><div><span className="eyebrow">OPERATIONS OVERVIEW</span><h2>Your factory, at a glance</h2><p>Production, materials and teams — one clear view of the day.</p></div><button className="btn-primary" onClick={() => setView("entry")}><Plus size={17} /> Record production</button></div>
+      <section className="operations-priority" aria-label="Items requiring attention"><span><AlertTriangle size={17} /> Needs attention</span><button onClick={() => setView("machines")}>{breakdownMachines} machine breakdowns <ChevronRight size={14} /></button><button onClick={() => setView("inventory")}>{lowStockCount} low-stock materials <ChevronRight size={14} /></button><button onClick={() => setView("qc")}>{qualityAlerts} quality holds <ChevronRight size={14} /></button></section>
       {/* 6 Metric KPI Cards — Blueprint Section 3.1 */}
       <div className="metric-grid">
         <div className="metric-card" style={{ cursor: "pointer" }} onClick={() => setView("entry")}>
@@ -1760,6 +1773,7 @@ function DashboardView({
       </div>
 
       {/* Quick Action Strip */}
+      <section className="panel production-comparison"><div className="panel-header"><div className="panel-title"><h3>Production against target</h3><p>Today's recorded output by product · quantity in each product's unit</p></div><button className="btn-outline" onClick={() => setView("reports")}>View reports <ChevronRight size={15} /></button></div><div className="production-comparison-legend"><span>Produced</span><span>Daily target</span></div>{products.length === 0 ? <p>No products configured yet.</p> : products.map((product) => { const produced = entries.filter((entry) => entry.productId === product.id).reduce((sum, entry) => sum + entry.quantityProduced, 0); const scale = Math.max(product.dailyTarget, produced, 1); return <div className="production-comparison-row" key={product.id}><div><strong>{product.name}</strong><span>{numberFmt.format(produced)} / {numberFmt.format(product.dailyTarget)} {product.unit}</span></div><div className="production-comparison-bars" aria-label={`${product.name}: ${produced} produced, target ${product.dailyTarget}`}><span style={{ width: `${produced / scale * 100}%` }} /><span style={{ width: `${product.dailyTarget / scale * 100}%` }} /></div></div>; })}</section>
       <div className="panel">
         <div className="panel-header">
           <div className="panel-title">
