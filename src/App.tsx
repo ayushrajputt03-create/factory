@@ -3213,8 +3213,8 @@ function ClientsCrmView({
         </div>
 
         {/* Client Directory Table */}
-        <div className="table-container">
-          <table>
+        <div className="table-container client-directory-scroll">
+          <table className="client-directory-table">
             <thead>
               <tr>
                 <th>Client Name & Category</th>
@@ -3237,16 +3237,17 @@ function ClientsCrmView({
                   onClick={() => setSelectedClientId(client.id)}
                 >
                   <td>
-                    <strong>{client.name}</strong>
-                    <br />
+                    <button className="client-name-link" onClick={(event) => { event.stopPropagation(); setSelectedClientId(client.id); }}>{client.name}</button>
+                    <div className="client-directory-tags">
                     <span className="badge badge-teal" style={{ textTransform: "capitalize" }}>
                       {client.clientCategory || "dealer"}
                     </span>
-                    {client.tags?.map((t: string) => (
+                    {[...new Set<string>(client.tags ?? [])].filter((tag) => tag.toLowerCase() !== (client.clientCategory || "dealer").toLowerCase()).map((t: string) => (
                       <span key={t} className="badge badge-purple" style={{ marginLeft: "0.25rem" }}>
                         {t}
                       </span>
                     ))}
+                    </div>
                   </td>
                   <td>
                     {client.phone}
@@ -3288,8 +3289,8 @@ function ClientsCrmView({
                     </strong>
                     {client.isOverCredit && (
                       <div>
-                        <span className="badge badge-danger">
-                          Exceeds Limit by {rupee.format(client.balance - client.creditLimit)}
+                        <span className="client-credit-warning">
+                          {rupee.format(client.balance - client.creditLimit)} over limit
                         </span>
                       </div>
                     )}
@@ -3298,7 +3299,7 @@ function ClientsCrmView({
                     <div style={{ display: "flex", gap: "0.4rem" }}>
                       {client.balance > 0 && (
                         <a
-                          className="btn-whatsapp"
+                          className="client-reminder-button"
                           href={`https://wa.me/${client.phone}?text=${encodeURIComponent(
                             `Dear ${client.name}, gentle payment reminder from Rajput Plastics. Outstanding balance of ${rupee.format(
                               client.balance
@@ -3308,7 +3309,7 @@ function ClientsCrmView({
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <MessageCircle size={14} /> Send Reminder
+                          <MessageCircle size={14} /> Remind
                         </a>
                       )}
                     </div>

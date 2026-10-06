@@ -1523,6 +1523,26 @@ svg {
   --border: var(--card-border);
 }
 .navigation-close, .navigation-backdrop { display: none; }
+.client-directory-table { min-width: 980px; width: 100%; table-layout: fixed; }
+.client-directory-table th:first-child { width: 25%; }
+.client-directory-table th:nth-child(2), .client-directory-table th:nth-child(3) { width: 16%; }
+.client-directory-table th:nth-child(4) { width: 11%; }
+.client-directory-table th:nth-child(5) { width: 11%; }
+.client-directory-table th:nth-child(6) { width: 12%; }
+.client-directory-table th:last-child { width: 9%; }
+.client-directory-table th, .client-directory-table td { padding: 16px 12px; vertical-align: middle; }
+.client-directory-table th:nth-child(5), .client-directory-table th:nth-child(6), .client-directory-table td:nth-child(5), .client-directory-table td:nth-child(6) { text-align: right; font-variant-numeric: tabular-nums; }
+.client-directory-table td:nth-child(5) { white-space: nowrap; }
+.client-name-link { display: block; border: 0; background: none; padding: 0; text-align: left; font-weight: 600; color: #20364e; font-size: 13px; line-height: 1.5; cursor: pointer; }
+.client-name-link:hover { text-decoration: underline; }
+.client-directory-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.client-directory-tags .badge { margin: 0 !important; font-size: 10px; font-weight: 500; padding: 3px 7px; }
+.client-directory-table code { display: inline-block; margin-top: 5px; font-size: 10px; white-space: nowrap; }
+.client-credit-warning { display: block; color: #b42318; font-size: 11px; line-height: 1.5; margin-top: 4px; }
+.client-reminder-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 6px 8px; border: 1px solid #cbdbe9; border-radius: 7px; background: #f4f8fc; color: #254b70; font-size: 11px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.client-reminder-button:hover { background: #e6eff8; border-color: #7da0ca; }
+.client-reminder-button:focus-visible { outline: 2px solid #5483b3; outline-offset: 2px; }
+@media (max-width: 760px) { .client-reminder-button { min-height: 44px; } }
 .plant-overview-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 8px 0; }
 .plant-overview-heading h2 { font-size: 26px; font-weight: 650; letter-spacing: -0.8px; margin: 6px 0; }
 .plant-overview-heading p { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
