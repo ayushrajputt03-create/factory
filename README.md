@@ -23,11 +23,11 @@ npm run build
 - Inventory stock IN/OUT form and movement history
 - BOM/product workspace with active versions and material requirements
 - Reports view with production summary and material consumption CSV export
-- Supabase-ready schema in `supabase/schema.sql`
+- Firebase-ready app configuration via environment variables
 
 ## Next production steps
 
-1. Connect Supabase Auth and persist the app actions to Postgres.
-2. Add row-level security policies for owner vs supervisor access.
+1. Connect Firebase Auth and persist app actions to Firestore.
+2. Add Firestore security rules for factory membership and roles.
 3. Replace seeded data with factory onboarding and invite flows.
 4. Pilot with one real factory before expanding Phase 2 billing.

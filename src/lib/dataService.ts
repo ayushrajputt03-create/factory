@@ -41,7 +41,6 @@ export const dataService = {
   // ==========================================
   getProducts(): Product[] {
     // TODO: FIREBASE -> const snapshot = await getDocs(collection(db, "factories", factoryId, "products"));
-    // TODO: SUPABASE (later) -> const { data } = await supabase.from('products').select('*');
     return mockStore.getProducts();
   },
 
@@ -54,7 +53,6 @@ export const dataService = {
     sellingPrice?: number;
   }): Product {
     // TODO: FIREBASE -> await addDoc(collection(db, "factories", factoryId, "products"), { name: data.name, unit: data.unit, dailyTarget: data.daily_target || 0 });
-    // TODO: SUPABASE (later) -> await supabase.from('products').insert([{ factory_id: factoryId, name: data.name, unit: data.unit, daily_target: data.daily_target || 0 }]);
 
     const products = mockStore.getProducts();
     const cleanCode = data.code?.trim() || `FG-${data.name.slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
@@ -80,7 +78,6 @@ export const dataService = {
   // ==========================================
   getMaterials(): Material[] {
     // TODO: FIREBASE -> const snapshot = await getDocs(collection(db, "factories", factoryId, "materials"));
-    // TODO: SUPABASE (later) -> const { data } = await supabase.from('materials').select('*');
     return mockStore.getMaterials();
   },
 
@@ -94,7 +91,6 @@ export const dataService = {
     unitCost?: number;
   }): Material {
     // TODO: FIREBASE -> await addDoc(collection(db, "factories", factoryId, "materials"), { name: data.name, unit: data.unit, currentStock: data.current_stock, lowStockThreshold: data.low_stock_threshold });
-    // TODO: SUPABASE (later) -> await supabase.from('materials').insert([{ factory_id: factoryId, name: data.name, unit: data.unit, current_stock: data.current_stock, low_stock_threshold: data.low_stock_threshold }]);
 
     const materials = mockStore.getMaterials();
     const cleanCode = data.code?.trim() || `RM-${data.name.slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
@@ -135,7 +131,6 @@ export const dataService = {
   // ==========================================
   getBoms(): Bom[] {
     // TODO: FIREBASE -> const snapshot = await getDocs(collection(db, "factories", factoryId, "boms"));
-    // TODO: SUPABASE (later) -> const { data } = await supabase.from('boms').select('*, bom_line_items(*)');
     return mockStore.getBoms();
   },
 
@@ -591,7 +586,6 @@ export const dataService = {
   // ==========================================
   getExpenses(): Expense[] {
     // TODO: FIREBASE -> const snapshot = await getDocs(query(collection(db, "factories", factoryId, "expenses"), orderBy("expenseDate", "desc")));
-    // TODO: SUPABASE (later) -> const { data } = await supabase.from('expenses').select('*').order('expense_date', { ascending: false });
     return mockStore.getExpenses();
   },
 
@@ -604,7 +598,6 @@ export const dataService = {
     createdBy?: string;
   }): Expense {
     // TODO: FIREBASE -> await addDoc(collection(db, "factories", factoryId, "expenses"), { ...data, factoryId, createdAt: serverTimestamp() });
-    // TODO: SUPABASE (later) -> await supabase.from('expenses').insert([{ factory_id: factoryId, ...data }]);
     const list = mockStore.getExpenses();
     const cleanAmount = Number(data.amount);
     if (!cleanAmount || cleanAmount <= 0) {
