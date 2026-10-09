@@ -11,6 +11,10 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.token.active == true;
     }
 
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
     function isFactoryUser(factoryId) {
       return isActiveUser() && request.auth.token.factory_id == factoryId;
     }
@@ -27,8 +31,65 @@ service cloud.firestore {
       return isFactoryUser(factoryId) && request.auth.token.role == 'supervisor';
     }
 
+    function isCatalogManager(factoryId) {
+      return isFactoryUser(factoryId) && (request.auth.token.role == 'owner' || request.auth.token.role == 'plant_manager');
+    }
+
+    function hasCrmAccess(factoryId) {
+      return isFactoryUser(factoryId)
+        && (request.auth.token.role == 'owner'
+          || request.auth.token.role == 'plant_manager'
+          || request.auth.token.crm_access == true);
+    }
+
+    function isOrderCustomer() {
+      return isActiveUser() && resource.data.customerId == request.auth.uid;
+    }
+
+    function isOrderFactoryUser() {
+      return isActiveUser() && resource.data.factoryId == request.auth.token.factory_id;
+    }
+
     // Factory collection rules
     match /factories/{factoryId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+
+      match /{document=**} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+
+      match /catalogListings/{listingId} {
+        allow read: if isFactoryUser(factoryId);
+        allow create, update: if isCatalogManager(factoryId)
+          && request.resource.data.keys().hasOnly(['title', 'description', 'category', 'photos', 'moq', 'unit', 'gst', 'leadTimeDays', 'priceSlabs', 'published', 'internalProductId', 'titleLower', 'keywords', 'createdAt', 'updatedAt'])
+          && request.resource.data.title is string
+          && request.resource.data.title.size() >= 3
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.description is string
+          && request.resource.data.description.size() <= 2000
+          && request.resource.data.photos is list
+          && request.resource.data.photos.size() <= 6
+          && request.resource.data.moq is number
+          && request.resource.data.moq >= 1
+          && request.resource.data.gst is number
+          && request.resource.data.gst >= 0
+          && request.resource.data.gst <= 28
+          && request.resource.data.leadTimeDays is number
+          && request.resource.data.leadTimeDays >= 0
+          && request.resource.data.priceSlabs is list
+          && request.resource.data.priceSlabs.size() > 0
+          && request.resource.data.published is bool;
+        allow delete: if isCatalogManager(factoryId);
+      }
+
+      // CRM namespace. Phase 1 is read-only and default-deny for writes; future
+      // vertical slices must add narrow collection rules and server validation.
+      match /crm/{document=**} {
+        allow read: if hasCrmAccess(factoryId);
+        allow create, update, delete: if false;
+      }
 
       // Client / CRM Collection
       match /clients/{clientId} {
@@ -51,5 +112,56 @@ service cloud.firestore {
         }
       }
     }
+
+    match /catalog/{listingId} {
+      allow get, list: if resource.data.active == true;
+      allow create, update, delete: if false;
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAdmin() || isOrderCustomer() || isOrderFactoryUser();
+      allow create, update, delete: if false;
+
+      match /events/{eventId} {
+        allow read: if isOrderCustomer() || isOrderFactoryUser();
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAdmin() || isOrderCustomer() || isOrderFactoryUser();
+      allow create, update, delete: if false;
+    }
+
+    match /refunds/{refundId} {
+      allow read: if isAdmin() || isOrderCustomer() || isOrderFactoryUser();
+      allow create, update, delete: if false;
+    }
+
+    match /webhookEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /rfqs/{rfqId} {
+      allow read: if isActiveUser() && (resource.data.customerId == request.auth.uid || resource.data.factoryIds.hasAny([request.auth.token.factory_id]) || isAdmin());
+      allow write: if false;
+      match /quotes/{quoteId} { allow read: if isActiveUser() && (get(/databases/$(database)/documents/rfqs/$(rfqId)).data.customerId == request.auth.uid || get(/databases/$(database)/documents/rfqs/$(rfqId)).data.factoryIds.hasAny([request.auth.token.factory_id]) || isAdmin()); allow write: if false; }
+      match /messages/{messageId} { allow read: if isActiveUser() && (get(/databases/$(database)/documents/rfqs/$(rfqId)).data.customerId == request.auth.uid || get(/databases/$(database)/documents/rfqs/$(rfqId)).data.factoryIds.hasAny([request.auth.token.factory_id]) || isAdmin()); allow write: if false; }
+    }
+
+    match /payouts/{payoutId} {
+      allow read: if isAdmin();
+      allow write: if false;
+      match /lines/{lineId} { allow read: if isAdmin(); allow write: if false; }
+    }
+
+    match /disputes/{disputeId} {
+      allow read: if isAdmin();
+      allow write: if false;
+      match /messages/{messageId} { allow read: if isAdmin(); allow write: if false; }
+    }
+
+    match /auditLogs/{logId} { allow read: if isAdmin(); allow write: if false; }
+    match /marketplaceSettings/{settingId} { allow read: if isAdmin(); allow write: if false; }
   }
 }

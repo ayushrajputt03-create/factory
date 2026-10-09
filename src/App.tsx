@@ -48,6 +48,10 @@ import {
   X,
 } from "lucide-react";
 import { dataService } from "./lib/dataService";
+import { CatalogView } from "./CatalogView";
+import { CrmModule, CrmUnavailable } from "./crm/CrmModule";
+import { canAccessCrm } from "./crm/foundation";
+import { useCrmPrincipal } from "./crm/useCrmPrincipal";
 import { escapeHtml } from "./lib/html";
 import { isFirebaseConfigured, realtimeDb } from "./lib/firebaseClient";
 import { onValue, ref, set } from "firebase/database";
@@ -116,7 +120,8 @@ type View =
   | "reports"
   | "notices"
   | "setup"
-  | "hr";
+  | "hr"
+  | "catalog";
 
 const rupee = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -132,7 +137,7 @@ const viewFromPath = (path: string): View => {
   if (path.startsWith("/accounts")) return "accounts";
   if (path.startsWith("/crm")) return "crm";
   const value = path.replace(/^\//, "").split("/").filter(Boolean).join("_");
-  const supported: View[] = ["dashboard", "entry", "work_orders", "machines", "inventory", "qc", "dispatch", "bom", "billing", "clients", "crm", "accounts", "reports", "notices", "setup", "hr"];
+  const supported: View[] = ["dashboard", "entry", "work_orders", "machines", "inventory", "qc", "dispatch", "bom", "billing", "clients", "crm", "accounts", "reports", "notices", "setup", "hr", "catalog"];
   return supported.includes(value as View) ? value as View : "dashboard";
 };
 
@@ -155,7 +160,13 @@ export default function App() {
     window.addEventListener("keydown", closeNavigation);
     return () => window.removeEventListener("keydown", closeNavigation);
   }, []);
-  const [userRole, setUserRole] = useState<"owner" | "supervisor" | "ca">("owner");
+  const [userRole, setUserRole] = useState<"owner" | "plant_manager" | "supervisor" | "ca">("owner");
+  const legacyUserRole = userRole === "plant_manager" ? "owner" : userRole;
+  const catalogFactoryId = import.meta.env.VITE_FACTORY_ID?.trim();
+  const crmSession = useCrmPrincipal(userRole, catalogFactoryId || "factory-jaipur-01");
+  const crmPrincipal = crmSession.principal;
+  const crmEnabled = import.meta.env.VITE_CRM_ENABLED !== "false";
+  const crmAllowed = crmEnabled && canAccessCrm(crmPrincipal);
   const [materials, setMaterials] = useState<Material[]>(initialMaterials);
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [boms, setBoms] = useState<Bom[]>(initialBoms);
@@ -209,6 +220,7 @@ export default function App() {
       notices: "Plant Bulletins",
       setup: "Setup & Masters",
       hr: "People & HR",
+      catalog: "Selling Catalog",
     };
     document.title = `${labels[view] ?? "Factory OS"} · Factory OS`;
   }, [view]);
@@ -640,7 +652,7 @@ export default function App() {
             <Users size={18} />
             <span>Client CRM & Accounts</span>
           </button>
-          {userRole !== "supervisor" && <button className={`nav-item ${view === "crm" ? "active" : ""}`} onClick={() => setView("crm")}>
+          {crmAllowed && <button className={`nav-item ${view === "crm" ? "active" : ""}`} onClick={() => setView("crm")}>
             <Users size={18} />
             <span>CRM</span>
           </button>}
@@ -652,6 +664,10 @@ export default function App() {
           <button className={`nav-item ${view === "accounts" ? "active" : ""}`} onClick={() => setView("accounts")}>
             <WalletCards size={18} />
             <span>Accounts & Finance</span>
+          </button>
+          <button className={`nav-item ${view === "catalog" ? "active" : ""}`} onClick={() => setView("catalog")}>
+            <ShoppingBag size={18} />
+            <span>Selling Catalog</span>
           </button>
           <button className={`nav-item ${view === "hr" ? "active" : ""}`} onClick={() => setView("hr")}>
             <UserRoundCog size={18} />
@@ -703,6 +719,7 @@ export default function App() {
                 {view === "reports" && "Operational & Material Consumption Reports"}
                 {view === "notices" && "Plant Bulletins & Quality Circulars"}
                 {view === "setup" && "Products, Materials & BOM Setup"}
+                {view === "catalog" && "Selling Catalog"}
               </h1>
               <p>Plant #1 · Sitapura Industrial Area, Jaipur (RJ)</p>
             </div>
@@ -715,12 +732,13 @@ export default function App() {
                 style={{ padding: "0.35rem 0.6rem", fontSize: "0.78rem", fontWeight: 700 }}
                 value={userRole}
                 onChange={(e) => {
-                  const role = e.target.value as "owner" | "supervisor" | "ca";
+                  const role = e.target.value as "owner" | "plant_manager" | "supervisor" | "ca";
                   setUserRole(role);
                   showToast(`Switched active role to ${role.toUpperCase()}`);
                 }}
               >
                 <option value="owner">Role: Owner (Full Access)</option>
+                <option value="plant_manager">Role: Plant Manager (Catalog Access)</option>
                 <option value="supervisor">Role: Supervisor (No CRM Access)</option>
                 <option value="ca">Role: CA / Accountant (Read-Only)</option>
               </select>
@@ -782,7 +800,7 @@ export default function App() {
               workOrders={workOrders}
               products={products}
               machines={machines}
-              userRole={userRole}
+              userRole={legacyUserRole}
               onStatusChange={handleWorkOrderStatusChange}
               showToast={showToast}
             />
@@ -832,7 +850,7 @@ export default function App() {
               partyBalances={partyBalances}
               ledgerEntries={ledgerEntries}
               invoices={invoices}
-              userRole={userRole}
+              userRole={legacyUserRole}
               onClientCreated={(newClient) => setParties(dataService.getParties())}
               setView={setView}
               showToast={showToast}
@@ -840,7 +858,11 @@ export default function App() {
           )}
 
           {view === "crm" && (
-            <CrmFoundationView parties={parties} invoices={invoices} userRole={userRole} showToast={showToast} onNavigate={setView} />
+            crmSession.loading ? <div className="panel crm-state" role="status"><span className="crm-spinner" />Verifying CRM access…</div> : !crmEnabled ? <CrmUnavailable /> : <CrmModule principal={crmPrincipal} onNavigate={(section) => {
+              const path = section === "overview" ? "/crm" : `/crm/${section}`;
+              window.history.pushState({ section }, "", path);
+              setViewState("crm");
+            }} />
           )}
 
           {view === "accounts" && (
@@ -853,7 +875,7 @@ export default function App() {
               productionEntries={productionEntries}
               machines={machines}
               expenses={expenses}
-              userRole={userRole}
+              userRole={legacyUserRole}
               onNavigate={setView}
               onAddExpense={(data) => {
                 dataService.addExpense(data);
@@ -866,6 +888,8 @@ export default function App() {
           )}
 
           {view === "hr" && <HrCompleteView showToast={showToast} />}
+
+          {view === "catalog" && <CatalogView factoryId={catalogFactoryId} products={products} canEdit={userRole === "owner" || userRole === "plant_manager"} showToast={showToast} />}
 
           {view === "dispatch" && (
             <DispatchView

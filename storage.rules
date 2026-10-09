@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isFactoryUser(factoryId) {
+      return request.auth != null
+        && request.auth.token.active == true
+        && request.auth.token.factory_id == factoryId;
+    }
+
+    function isCatalogManager(factoryId) {
+      return isFactoryUser(factoryId)
+        && (request.auth.token.role == 'owner' || request.auth.token.role == 'plant_manager');
+    }
+
+    match /factories/{factoryId}/catalog/{listingId}/{fileName} {
+      allow read: if isFactoryUser(factoryId);
+      allow create, update: if isCatalogManager(factoryId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if isCatalogManager(factoryId);
+    }
+  }
+}

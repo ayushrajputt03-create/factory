@@ -15,11 +15,14 @@
     "lucide-react": "^0.544.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "vite": "^7.1.5"
+    "vite": "^7.1.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
+    "firebase-tools": "^15.33.0",
     "typescript": "^5.9.2",
     "vitest": "^5.0.3"
   }
