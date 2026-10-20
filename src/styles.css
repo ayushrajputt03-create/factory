@@ -1583,6 +1583,26 @@ svg {
   --surface-muted: var(--bg-app);
   --border: var(--card-border);
 }
+
+.ca-portal { min-height: 100vh; background: #f0f4ff; padding: 24px; color: #021024; }
+.ca-header, .ca-report > header, .ca-actions, .ca-access-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ca-header { justify-content: space-between; margin-bottom: 24px; }
+.ca-header h1 { display: flex; align-items: center; gap: 12px; font-size: 24px; }
+.ca-login { width: min(100%, 420px); margin: 40px auto; display: grid; gap: 16px; background: white; padding: 24px; border-radius: 8px; }
+.ca-login label { display: grid; gap: 8px; }
+.ca-login input, .ca-actions select { min-height: 44px; border: 1px solid #7da0ca; border-radius: 6px; padding: 10px; width: 100%; }
+.ca-actions select { width: auto; }
+.ca-management-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; margin-top: 20px; }
+.ca-access-card, .ca-report { background: white; border: 1px solid #c1e8ff; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+.ca-access-card fieldset { border: 0; padding: 0; margin: 16px 0; display: grid; gap: 12px; }
+.ca-access-card label { display: flex; gap: 10px; align-items: center; min-height: 32px; }
+.ca-actions { margin-top: 16px; }
+.ca-error { color: #b91c1c; }
+.hr-search { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
+.hr-search input { width: min(100%, 360px); padding: 10px; min-height: 44px; border: 1px solid #7da0ca; border-radius: 6px; }
+.ca-report > header { justify-content: space-between; }
+.ca-report table { width: 100%; }
+@media (max-width: 600px) { .ca-portal { padding: 16px; } .ca-actions button { min-height: 44px; } }
 .navigation-close, .navigation-backdrop { display: none; }
 .workspace { min-width: 0; }
 .topbar { gap: 16px; flex-wrap: wrap; height: auto; min-height: 72px; padding-top: 12px; padding-bottom: 12px; }

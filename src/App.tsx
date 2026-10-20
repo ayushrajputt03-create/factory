@@ -49,11 +49,15 @@ import {
 } from "lucide-react";
 import { dataService } from "./lib/dataService";
 import { CatalogView } from "./CatalogView";
+import { Landing } from "./Landing";
+import { Marketplace, MarketplaceInbox } from "./Marketplace";
 import { CrmModule, CrmUnavailable } from "./crm/CrmModule";
 import { canAccessCrm } from "./crm/foundation";
 import { useCrmPrincipal } from "./crm/useCrmPrincipal";
 import { escapeHtml } from "./lib/html";
 import { isFirebaseConfigured, realtimeDb } from "./lib/firebaseClient";
+import { CaManagement, CaPortal, useCaIdentity } from "./ca/CaModule";
+import { HrManagement, HrPortal } from "./hr/HrModule";
 import { onValue, ref, set } from "firebase/database";
 import {
   initialBoms,
@@ -117,6 +121,8 @@ type View =
   | "clients"
   | "crm"
   | "accounts"
+  | "ca_access"
+  | "hr_access"
   | "reports"
   | "notices"
   | "setup"
@@ -150,6 +156,21 @@ import {
 } from "./lib/crmUtils";
 
 export default function App() {
+  if (window.location.pathname === "/") return <Landing />;
+  if (window.location.pathname.startsWith("/marketplace/inbox")) return <MarketplaceInbox />;
+  if (window.location.pathname.startsWith("/marketplace")) return <Marketplace />;
+  return <FactoryApp />;
+}
+
+function FactoryApp() {
+  const identity = useCaIdentity();
+  if (isFirebaseConfigured && identity.loading) return <p role="status">Verifying session...</p>;
+  if (window.location.pathname.startsWith("/hr/login") || identity.role === "hr") return <HrPortal />;
+  if (window.location.pathname === "/ca" || window.location.pathname.startsWith("/ca/") || (identity.user && (!identity.role || identity.role === "ca"))) return <CaPortal />;
+  return <FactoryWorkspace />;
+}
+
+function FactoryWorkspace() {
   const [view, setViewState] = useState<View>(() => viewFromPath(window.location.pathname));
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -216,6 +237,8 @@ export default function App() {
       clients: "Client CRM & Accounts",
       crm: "CRM",
       accounts: "Accounts & Finance",
+      ca_access: "CA Management",
+      hr_access: "HR Access Management",
       reports: "Production Reports",
       notices: "Plant Bulletins",
       setup: "Setup & Masters",
@@ -665,6 +688,8 @@ export default function App() {
             <WalletCards size={18} />
             <span>Accounts & Finance</span>
           </button>
+          <button className={`nav-item ${view === "ca_access" ? "active" : ""}`} onClick={() => setView("ca_access")}><ShieldCheck size={18} /><span>CA Management</span></button>
+          <button className={`nav-item ${view === "hr_access" ? "active" : ""}`} onClick={() => setView("hr_access")}><Users size={18} /><span>HR Access</span></button>
           <button className={`nav-item ${view === "catalog" ? "active" : ""}`} onClick={() => setView("catalog")}>
             <ShoppingBag size={18} />
             <span>Selling Catalog</span>
@@ -731,6 +756,7 @@ export default function App() {
                 className="form-control"
                 style={{ padding: "0.35rem 0.6rem", fontSize: "0.78rem", fontWeight: 700 }}
                 value={userRole}
+                disabled={isFirebaseConfigured}
                 onChange={(e) => {
                   const role = e.target.value as "owner" | "plant_manager" | "supervisor" | "ca";
                   setUserRole(role);
@@ -740,7 +766,6 @@ export default function App() {
                 <option value="owner">Role: Owner (Full Access)</option>
                 <option value="plant_manager">Role: Plant Manager (Catalog Access)</option>
                 <option value="supervisor">Role: Supervisor (No CRM Access)</option>
-                <option value="ca">Role: CA / Accountant (Read-Only)</option>
               </select>
             </div>
             <div className="shift-badge">
@@ -865,6 +890,8 @@ export default function App() {
             }} />
           )}
 
+          {view === "ca_access" && <CaManagement />}
+          {view === "hr_access" && <HrManagement />}
           {view === "accounts" && (
             <AccountsFinanceView
               invoices={invoices}
