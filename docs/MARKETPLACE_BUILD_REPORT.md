@@ -1,5 +1,9 @@
 # Marketplace build report
 
+## Marketplace as homepage
+
+Root `/` now opens the buyer marketplace directly, replacing the standalone landing screen. ERP retains `/dashboard` and the existing `/catalog` module, renamed Product Listings in navigation and page headings. The module links back to the marketplace. Existing ERP listing form, internal product links and publish workflow are preserved. Standalone landing source is retained unused for recoverability. No backend changes in this update.
+
 ## ERP-owned public catalog
 
 Buyer marketplace now subscribes to active public catalog projections generated from Factory OS ERP catalogListings. Configured Firebase uses live records with loading/empty/error states and never falls back to sample products on failure. Unconfigured environments retain clearly identified sample preview. Uses listing photos and MOQ-matching slab price. Product creation remains in ERP. Existing public projection Function must be deployed; factory identity configuration, slab-aware cart repricing and durable checkout remain pending. Initial production build passed.

@@ -118,7 +118,7 @@ export function CatalogView({ factoryId, products, canEdit, showToast }: Props) 
 
   return <div className="catalog-page">
     <div className="catalog-hero">
-      <div><span className="eyebrow">MARKETPLACE READY</span><h2>Selling Catalog</h2><p>Publish factory products with buyer-safe pricing, lead times and product information.</p></div>
+      <div><span className="eyebrow">FACTORY OS · MARKETPLACE MODULE</span><h2>Product Listings</h2><p>Manage marketplace listings from your ERP. Link an internal product, set selling terms and publish buyer-facing information.</p><a href="/">View marketplace →</a></div>
       <div className="catalog-hero-actions"><button className="btn-outline" type="button" onClick={() => importInput.current?.click()} disabled={!canEdit}><FileSpreadsheet size={16} /> Import CSV / Excel</button><button className="btn-primary" type="button" onClick={() => document.getElementById("catalog-title")?.focus()} disabled={!canEdit}><Plus size={16} /> New listing</button></div>
     </div>
     {!factoryId && <div className="catalog-notice">Set <code>VITE_FACTORY_ID</code> after Firebase Auth is enabled to connect this catalog to a factory.</div>}

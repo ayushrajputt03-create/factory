@@ -49,7 +49,6 @@ import {
 } from "lucide-react";
 import { dataService } from "./lib/dataService";
 import { CatalogView } from "./CatalogView";
-import { Landing } from "./Landing";
 import { Marketplace, MarketplaceInbox } from "./Marketplace";
 import { CrmModule, CrmUnavailable } from "./crm/CrmModule";
 import { canAccessCrm } from "./crm/foundation";
@@ -156,7 +155,7 @@ import {
 } from "./lib/crmUtils";
 
 export default function App() {
-  if (window.location.pathname === "/") return <Landing />;
+  if (window.location.pathname === "/") return <Marketplace />;
   if (window.location.pathname.startsWith("/marketplace/inbox")) return <MarketplaceInbox />;
   if (window.location.pathname.startsWith("/marketplace")) return <Marketplace />;
   return <FactoryApp />;
@@ -243,7 +242,7 @@ function FactoryWorkspace() {
       notices: "Plant Bulletins",
       setup: "Setup & Masters",
       hr: "People & HR",
-      catalog: "Selling Catalog",
+      catalog: "Product Listings",
     };
     document.title = `${labels[view] ?? "Factory OS"} · Factory OS`;
   }, [view]);
@@ -692,7 +691,7 @@ function FactoryWorkspace() {
           <button className={`nav-item ${view === "hr_access" ? "active" : ""}`} onClick={() => setView("hr_access")}><Users size={18} /><span>HR Access</span></button>
           <button className={`nav-item ${view === "catalog" ? "active" : ""}`} onClick={() => setView("catalog")}>
             <ShoppingBag size={18} />
-            <span>Selling Catalog</span>
+            <span>Product Listings</span>
           </button>
           <button className={`nav-item ${view === "hr" ? "active" : ""}`} onClick={() => setView("hr")}>
             <UserRoundCog size={18} />
@@ -744,7 +743,7 @@ function FactoryWorkspace() {
                 {view === "reports" && "Operational & Material Consumption Reports"}
                 {view === "notices" && "Plant Bulletins & Quality Circulars"}
                 {view === "setup" && "Products, Materials & BOM Setup"}
-                {view === "catalog" && "Selling Catalog"}
+                {view === "catalog" && "Product Listings"}
               </h1>
               <p>Plant #1 · Sitapura Industrial Area, Jaipur (RJ)</p>
             </div>
