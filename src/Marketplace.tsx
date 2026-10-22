@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Search, ShoppingCart, Package, Factory, ShieldCheck, Truck, Heart, ChevronRight } from "lucide-react";
 import "./marketplace.css";
+import { unitPriceForQuantity, type BulkSlab } from "./lib/marketplacePricing";
 import { MarketplaceAccount } from "./MarketplaceAccount";
 import { ConnectedSeller } from "./ConnectedSeller";
 import { collection, onSnapshot, query as firestoreQuery, where } from "firebase/firestore";
 import { firestore } from "./lib/firebaseClient";
 
-type Offer = { id: string; title: string; factory: string; city: string; category: string; price: number; moq: number; icon: string; photo?: string };
+type Offer = { id: string; title: string; factory: string; city: string; category: string; price: number; moq: number; icon: string; photo?: string; priceSlabs?: BulkSlab[] };
 type Purchase = { id: string; buyer: string; address: string; items: { offer: Offer; quantity: number }[]; status: string };
 const demoOffers: Offer[] = [
   { id: "crate", title: "Heavy-duty industrial storage crate", factory: "Jaipur Polymer Works", city: "Jaipur", category: "Storage", price: 320, moq: 10, icon: "▦" },
@@ -20,21 +21,25 @@ function saved<T>(key: string, fallback: T): T { try { return JSON.parse(localSt
 const money = (value: number) => `₹${value.toLocaleString("en-IN")}`;
 const productImage = (offer: Offer) => offer.photo || "/product-demo.svg";
 export function Marketplace() {
-  const [offers, setOffers] = useState<Offer[]>(firestore ? [] : demoOffers);
+  useEffect(()=>{const shortcut=(event:KeyboardEvent)=>{const target=event.target as HTMLElement;if(event.key==="/"&&!target.closest("input,textarea,select,[contenteditable=true]")){event.preventDefault();document.querySelector<HTMLInputElement>('input[aria-label="Search marketplace"]')?.focus();}};window.addEventListener("keydown",shortcut);return()=>window.removeEventListener("keydown",shortcut);},[]);
+  const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
+  const [offers, setOffers] = useState<Offer[]>(previewMode ? saved<Offer[]>("factory-market-preview-listings", []) : firestore ? [] : demoOffers);
   const [catalogStatus, setCatalogStatus] = useState(firestore ? "Loading ERP catalog…" : "Sample catalog preview — configure Firebase to show published ERP listings.");
   useEffect(() => {
+    if (previewMode) { setCatalogStatus("ERP commerce preview — local published listings. No real orders or payments."); return; }
     if (!firestore) return;
     return onSnapshot(firestoreQuery(collection(firestore, "catalog"), where("active", "==", true)), snapshot => {
       const next = snapshot.docs.flatMap(document => {
         const row = document.data();
         const slab = Array.isArray(row.priceSlabs) ? row.priceSlabs.find((s: { minQty: number; maxQty: number | null }) => s.minQty <= row.moq && (s.maxQty === null || s.maxQty >= row.moq)) : null;
         if (typeof row.title !== "string" || !Number.isFinite(slab?.pricePerUnit) || slab.pricePerUnit <= 0 || !Number.isInteger(row.moq) || row.moq < 1) return [];
-        return [{ id: document.id, title: row.title, factory: row.factoryName || "Factory", city: typeof row.city === "string" ? row.city : "", category: row.category || "Other", price: slab.pricePerUnit, moq: row.moq, icon: "▦", photo: Array.isArray(row.photos) && typeof row.photos[0] === "string" ? row.photos[0] : undefined }];
+        return [{ id: document.id, title: row.title, factory: row.factoryName || "Factory", city: typeof row.city === "string" ? row.city : "", category: row.category || "Other", price: slab.pricePerUnit, priceSlabs: row.priceSlabs, moq: row.moq, icon: "▦", photo: Array.isArray(row.photos) && typeof row.photos[0] === "string" ? row.photos[0] : undefined }];
       });
       setOffers(next); setCatalogStatus(next.length ? "Published directly from Factory OS ERP" : "No published ERP listings yet. Publish a product from Factory OS → Selling Catalog.");
     }, () => { setOffers([]); setCatalogStatus("ERP catalog unavailable. Check Firebase connection and public catalog permissions."); });
   }, []);
   const [query, setQuery] = useState("");
+  const requestedListingId = new URLSearchParams(window.location.search).get("listing");
   const [category, setCategory] = useState("All products");
   const [tab, setTab] = useState("shop");
   const [cart, setCart] = useState<Record<string, number>>(() => { const value = saved<Record<string, number>>("factory-market-cart", {}); return Object.fromEntries(offers.filter(o => Number.isInteger(value?.[o.id]) && value[o.id] >= o.moq && value[o.id] <= 100000).map(o => [o.id, value[o.id]])); });
@@ -50,8 +55,8 @@ export function Marketplace() {
   const [selected, setSelected] = useState<Offer | null>(null);
   const [recent, setRecent] = useState<string[]>(() => { const value = saved<unknown>("factory-market-recent", []); return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && offers.some(o=>o.id===id)).slice(0,6) : []; });
   useEffect(() => { if (!selected) return; setRecent(current => { const next = [selected.id, ...current.filter(id=>id!==selected.id)].slice(0,6); try { localStorage.setItem("factory-market-recent", JSON.stringify(next)); } catch { /* Browsing remains available when storage is full. */ } return next; }); }, [selected]);
-  const visibleOffers = offers.filter(o => (!savedOnly || wishlist.includes(o.id)) && o.price <= maxPrice && (category === "All products" || o.category === category) && `${o.title} ${o.factory}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => sort === "low" ? a.price-b.price : sort === "high" ? b.price-a.price : 0);
-  const items = offers.filter(o => cart[o.id]).map(offer => ({ offer, quantity: cart[offer.id] }));
+  const visibleOffers = offers.filter(o => requestedListingId ? o.id === requestedListingId : (!savedOnly || wishlist.includes(o.id)) && o.price <= maxPrice && (category === "All products" || o.category === category) && `${o.title} ${o.factory}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => sort === "low" ? a.price-b.price : sort === "high" ? b.price-a.price : 0);
+  const items = offers.filter(o => cart[o.id]).map(offer => ({ offer: {...offer,price:unitPriceForQuantity(offer.price,cart[offer.id],offer.priceSlabs)}, quantity: cart[offer.id] }));
   const total = items.reduce((sum, item) => sum + item.offer.price * item.quantity, 0);
   function checkout(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -63,6 +68,8 @@ export function Marketplace() {
     {message && <p className="market-message" role="status">{message}<button aria-label="Dismiss message" onClick={() => setMessage("")}>×</button></p>}
     <div className="commerce-searchbar"><a href="/marketplace" className="commerce-brand"><Factory size={30}/> factory<span>market</span><small>BUSINESS BUYING, SIMPLIFIED</small></a><div className="commerce-search"><select aria-label="Search category" value={category} onChange={e => {setCategory(e.target.value);setTab("shop");}}>{["All products","Storage","Packaging","Components"].map(c=><option key={c}>{c}</option>)}</select><input aria-label="Search marketplace" placeholder="Search products, factories and more" value={query} onChange={e=>{setQuery(e.target.value);setTab("shop");}}/><Search size={22}/></div><button onClick={()=>setTab("orders")}><Package size={20}/> Orders</button><button onClick={()=>setTab("cart")}><ShoppingCart size={22}/> Cart ({items.length})</button></div>
     <MarketplaceAccount />
+    {selected && <div className="shop-share-action"><button onClick={async()=>{const url=new URL(location.href);url.searchParams.set("listing",selected.id);try{if(navigator.share)await navigator.share({title:selected.title,url:url.toString()});else{await navigator.clipboard.writeText(url.toString());setMessage("Product link copied.");}}catch(error){if(!(error instanceof DOMException&&error.name==="AbortError"))setMessage("Sharing unavailable. Copy the page address manually.");}}}>Share product ↗</button></div>}
+    <nav className="shop-mobile-navigation" aria-label="Mobile shopping navigation"><button aria-current={tab==="shop"?"page":undefined} onClick={()=>{setTab("shop");window.scrollTo({top:0,behavior:"smooth"});}}>Home</button><button onClick={()=>{setTab("shop");setTimeout(()=>document.querySelector(".commerce-departments")?.scrollIntoView({behavior:"smooth",block:"center"}),0);}}>Categories</button><button aria-current={tab==="cart"?"page":undefined} onClick={()=>setTab("cart")}>Cart <span>{items.length}</span></button><button onClick={()=>{document.querySelector<HTMLButtonElement>(".market-account>button")?.click();document.querySelector(".market-account")?.scrollIntoView({behavior:"smooth"});}}>Account</button></nav>
     <p className="market-message" role="status">{catalogStatus} <a href="/catalog">Open ERP selling catalog →</a></p>
     {tab === "sell" && <ConnectedSeller />}
     {tab === "shop" && recent.length > 0 && <section className="recent-products"><div><h2>Recently viewed</h2><button onClick={()=>{setRecent([]);try{localStorage.removeItem("factory-market-recent");}catch{/* Local history is cleared for this session. */}}}>Clear history</button></div><div>{recent.filter(id=>offers.some(o=>o.id===id)).map(id=>{const offer=offers.find(o=>o.id===id)!;return <button key={id} onClick={()=>setSelected(offer)}><img src={productImage(offer)} alt="" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/product-demo.svg";}}/><span>{offer.title}<strong>{money(offer.price)} / unit</strong></span></button>;})}</div></section>}

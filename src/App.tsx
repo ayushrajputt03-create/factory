@@ -48,7 +48,9 @@ import {
   X,
 } from "lucide-react";
 import { dataService } from "./lib/dataService";
-import { CatalogView } from "./CatalogView";
+import { CommerceModule } from "./CommerceModule";
+import { DemoDispatch } from "./DemoDispatch";
+import { CommercePreview } from "./CommercePreview";
 import { Marketplace, MarketplaceInbox } from "./Marketplace";
 import { CrmModule, CrmUnavailable } from "./crm/CrmModule";
 import { canAccessCrm } from "./crm/foundation";
@@ -155,6 +157,8 @@ import {
 } from "./lib/crmUtils";
 
 export default function App() {
+  if (window.location.pathname === "/dispatch-preview") return <DemoDispatch />;
+  if (window.location.pathname === "/erp-commerce-preview") return <CommercePreview />;
   if (window.location.pathname === "/") return <Marketplace />;
   if (window.location.pathname.startsWith("/marketplace/inbox")) return <MarketplaceInbox />;
   if (window.location.pathname.startsWith("/marketplace")) return <Marketplace />;
@@ -170,6 +174,7 @@ function FactoryApp() {
 }
 
 function FactoryWorkspace() {
+  const catalogIdentity = useCaIdentity();
   const [view, setViewState] = useState<View>(() => viewFromPath(window.location.pathname));
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -182,7 +187,7 @@ function FactoryWorkspace() {
   }, []);
   const [userRole, setUserRole] = useState<"owner" | "plant_manager" | "supervisor" | "ca">("owner");
   const legacyUserRole = userRole === "plant_manager" ? "owner" : userRole;
-  const catalogFactoryId = import.meta.env.VITE_FACTORY_ID?.trim();
+  const catalogFactoryId = isFirebaseConfigured ? catalogIdentity.factoryId : import.meta.env.VITE_FACTORY_ID?.trim();
   const crmSession = useCrmPrincipal(userRole, catalogFactoryId || "factory-jaipur-01");
   const crmPrincipal = crmSession.principal;
   const crmEnabled = import.meta.env.VITE_CRM_ENABLED !== "false";
@@ -242,7 +247,7 @@ function FactoryWorkspace() {
       notices: "Plant Bulletins",
       setup: "Setup & Masters",
       hr: "People & HR",
-      catalog: "Product Listings",
+      catalog: "Commerce",
     };
     document.title = `${labels[view] ?? "Factory OS"} · Factory OS`;
   }, [view]);
@@ -691,7 +696,7 @@ function FactoryWorkspace() {
           <button className={`nav-item ${view === "hr_access" ? "active" : ""}`} onClick={() => setView("hr_access")}><Users size={18} /><span>HR Access</span></button>
           <button className={`nav-item ${view === "catalog" ? "active" : ""}`} onClick={() => setView("catalog")}>
             <ShoppingBag size={18} />
-            <span>Product Listings</span>
+            <span>Commerce</span>
           </button>
           <button className={`nav-item ${view === "hr" ? "active" : ""}`} onClick={() => setView("hr")}>
             <UserRoundCog size={18} />
@@ -762,7 +767,7 @@ function FactoryWorkspace() {
                   showToast(`Switched active role to ${role.toUpperCase()}`);
                 }}
               >
-                <option value="owner">Role: Owner (Full Access)</option>
+                <option value="owner">{isFirebaseConfigured ? `Account: ${catalogIdentity.role || "No factory role"}` : "Demo role: Owner"}</option>
                 <option value="plant_manager">Role: Plant Manager (Catalog Access)</option>
                 <option value="supervisor">Role: Supervisor (No CRM Access)</option>
               </select>
@@ -915,7 +920,7 @@ function FactoryWorkspace() {
 
           {view === "hr" && <HrCompleteView showToast={showToast} />}
 
-          {view === "catalog" && <CatalogView factoryId={catalogFactoryId} products={products} canEdit={userRole === "owner" || userRole === "plant_manager"} showToast={showToast} />}
+          {view === "catalog" && <CommerceModule factoryId={catalogFactoryId} products={products} canEdit={isFirebaseConfigured ? catalogIdentity.active === true && (catalogIdentity.role === "owner" || catalogIdentity.role === "plant_manager") : userRole === "owner" || userRole === "plant_manager"} showToast={showToast} />}
 
           {view === "dispatch" && (
             <DispatchView

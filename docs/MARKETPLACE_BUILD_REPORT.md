@@ -1,5 +1,41 @@
 # Marketplace build report
 
+## Responsive feature checklist and navigation
+
+Added revised feature checklist with UI/backend dependencies, acceptance checks and honest completion states. Added mobile Home/Categories/Cart/Account navigation, `/` search shortcut respecting editable fields, native-share/clipboard product links, tablet three-column grid and reduced-motion overrides. Light theme retained. Browser QA remains pending; full master-prompt backend remains incomplete.
+
+## Master prompt implementation pass
+
+Reviewed the new attachment and recorded architecture/build-order corrections in MASTER_PROMPT_REVIEW.md. Added calm marketplace design tokens, dark/reduced-motion styles and quantity-based cart bulk pricing with two passing boundary/validation tests. Full master-prompt scope remains pending; no deployment in this pass.
+
+## Dispatch preview and QR
+
+Added /dispatch-preview: select browser-local demo order, require Approved status before dispatch, record recipient phone/courier/AWB, timestamp dispatch and print a clearly labelled non-tax packing slip with locally generated tracking QR. QR embeds only an opaque order URL. Tracking view excludes address/phone. Cross-device lookup and courier delivery confirmation are not implemented. Added qrcode and TypeScript types. Dependency install reported 19 vulnerabilities (4 moderate, 15 high), requiring separate audit triage.
+
+## Seller preview visual polish
+
+Redesigned commerce preview with original seller-workspace heading, grouped catalog form, descriptive field hints, dispatch-city wording, styled photo picker and published listing cards with thumbnails and buyer links. Preview/storage limitations remain explicit. Production build passed. This styling does not convert local storage into a production backend.
+
+## Original ERP commerce module
+
+Added independently branded Commerce workspace in ERP at /catalog: Product listings, ERP inventory references, Orders & fulfilment navigation and Sales partners availability information. Existing listing workflow is reused; unavailable order ingestion/partner finance are labelled explicitly. No competitor assets or affiliation claims added. Includes content-ownership guidance; this is not a legal clearance or guarantee. Production build passed. No live deployment performed for this update.
+
+## Commerce workflow demonstration
+
+Added /erp-commerce-preview for explicit browser-local listing publication, preview marketplace links, and approve/reject decisions on demo orders. Preview catalog is selected only with preview=1; production Firestore catalog is unchanged. Reseller tab explains the model and openly identifies attribution/ledger/payout gaps. Existing REA Flipkart order/shipment findings inform separation of seller decisions and fulfilment; no new competitor observation was made. Production build passed. This preview is not tenant-authorized commerce and must not handle real transactions.
+
+## Catalog access UX cleanup
+
+Applied ECC frontend-a11y guidance: replaced duplicate access warnings with one styled seller-access card and clear onboarding steps; listing form appears only for assigned authorized factories; permission checks precede form validation; duplicate top error summary removed; account header no longer claims Owner Full Access when no factory role exists. Added responsive account controls, disabled states and focus outlines. Production build passed. This UI change does not grant account permissions or resolve undeployed backend configuration.
+
+## Listing save feedback and destination
+
+Save now reports validation/auth errors beside the button and uses explicit upload/save progress. Photos upload before the ERP document is created, preventing a partially-created document from photo-upload failure (unreferenced uploaded objects still need cleanup if the document write fails). Successful saves show ERP destination, listing ID, draft versus publish-request status and a marketplace link filtered by listing ID. Public visibility still depends on deployed catalog projection. Screenshot showed Draft selected, so such a save is not public. Build passed before the final small listing-ID filter adjustment.
+
+## Catalog save/auth correction
+
+Catalog now derives factory identity and edit permission from authenticated claims when Firebase is configured, rather than missing VITE_FACTORY_ID/local role dropdown. Unassigned users see account sign-in and application guidance. Save serializes optional internalProductId as an empty string rather than undefined, avoiding Firestore unsupported-field errors. Production build passed. End-to-end listing save still requires an approved account, deployed rules/storage and projection Function; no successful production write has been verified.
+
 ## Marketplace as homepage
 
 Root `/` now opens the buyer marketplace directly, replacing the standalone landing screen. ERP retains `/dashboard` and the existing `/catalog` module, renamed Product Listings in navigation and page headings. The module links back to the marketplace. Existing ERP listing form, internal product links and publish workflow are preserved. Standalone landing source is retained unused for recoverability. No backend changes in this update.
